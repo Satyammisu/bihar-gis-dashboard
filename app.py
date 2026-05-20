@@ -1,207 +1,202 @@
-# ============================================
-# BIHAR GIS DASHBOARD - FINAL FULL app.py
-# ============================================
-
 import pandas as pd
-import dash
-from dash import Dash, dcc, html, dash_table, Input, Output
+import json
+from dash import Dash, dcc, html, Input, Output
 import plotly.express as px
 import plotly.graph_objects as go
-import os
 
-# ============================================
-# INITIALIZE DASH APP
-# ============================================
+# =====================================================
+# LOAD BIHAR BOUNDARY GEOJSON
+# =====================================================
 
-app = Dash(__name__)
-server = app.server
+with open("bihar_boundary.geojson", "r", encoding="utf-8") as f:
+    bihar_geojson = json.load(f)
 
-# ============================================
-# LOAD CSV FILES
-# ============================================
+# =====================================================
+# SAFE CSV LOADER
+# =====================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+def load_csv(file_name):
 
-cold_storage_file = os.path.join(BASE_DIR, "cold_storage.csv")
-railway_file = os.path.join(BASE_DIR, "railway_stations.csv")
-airport_file = os.path.join(BASE_DIR, "airport.csv")
-mandi_file = os.path.join(BASE_DIR, "mandis.csv")
+    df = pd.read_csv(file_name, encoding="utf-8")
 
-# ============================================
-# READ CSV FILES
-# ============================================
+    # normalize column names
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "_")
+    )
 
-cold_df = pd.read_csv(cold_storage_file)
-rail_df = pd.read_csv(railway_file)
-airport_df = pd.read_csv(airport_file)
-mandi_df = pd.read_csv(mandi_file)
+    return df
 
-# ============================================
-# CLEAN COLUMN NAMES
-# ============================================
+# =====================================================
+# LOAD ALL DATASETS
+# =====================================================
 
-cold_df.columns = cold_df.columns.str.strip().str.lower()
-rail_df.columns = rail_df.columns.str.strip().str.lower()
-airport_df.columns = airport_df.columns.str.strip().str.lower()
-mandi_df.columns = mandi_df.columns.str.strip().str.lower()
+cold_df = load_csv("cold_storage.csv")
+rail_df = load_csv("railway_stations.csv")
+airport_df = load_csv("airport.csv")
+mandi_df = load_csv("mandis.csv")
 
-# ============================================
-# RENAME COLUMNS
-# ============================================
+# =====================================================
+# STANDARDIZE COLUMNS
+# =====================================================
 
-cold_df.rename(columns={
-    "name": "Name",
-    "district": "District",
-    "latitude": "Latitude",
-    "longitude": "Longitude"
-}, inplace=True)
+def standardize_columns(df):
 
-rail_df.rename(columns={
-    "station_name": "Name",
-    "name": "Name",
-    "district": "District",
-    "latitude": "Latitude",
-    "longitude": "Longitude"
-}, inplace=True)
+    column_mapping = {}
 
-airport_df.rename(columns={
-    "airport_name": "Name",
-    "name": "Name",
-    "district": "District",
-    "latitude": "Latitude",
-    "longitude": "Longitude"
-}, inplace=True)
+    for col in df.columns:
 
-mandi_df.rename(columns={
-    "mandi_name": "Name",
-    "name": "Name",
-    "district": "District",
-    "latitude": "Latitude",
-    "longitude": "Longitude"
-}, inplace=True)
+        if "name" in col:
+            column_mapping[col] = "Name"
 
-# ============================================
-# HANDLE MISSING COLUMNS
-# ============================================
+        elif "district" in col:
+            column_mapping[col] = "District"
 
-required_cols = ["Name", "District", "Latitude", "Longitude"]
+        elif "lat" in col:
+            column_mapping[col] = "Latitude"
 
-for df in [cold_df, rail_df, airport_df, mandi_df]:
+        elif "lon" in col:
+            column_mapping[col] = "Longitude"
+
+    df = df.rename(columns=column_mapping)
+
+    required_cols = ["Name", "District", "Latitude", "Longitude"]
+
     for col in required_cols:
         if col not in df.columns:
             df[col] = None
 
-# ============================================
-# REMOVE NULL LAT LONG
-# ============================================
+    df["Name"] = df["Name"].fillna("Unknown")
+    df["District"] = df["District"].fillna("Unknown")
 
-cold_df = cold_df.dropna(subset=["Latitude", "Longitude"])
-rail_df = rail_df.dropna(subset=["Latitude", "Longitude"])
-airport_df = airport_df.dropna(subset=["Latitude", "Longitude"])
-mandi_df = mandi_df.dropna(subset=["Latitude", "Longitude"])
-
-# ============================================
-# CONVERT LAT LONG TO NUMERIC
-# ============================================
-
-for df in [cold_df, rail_df, airport_df, mandi_df]:
     df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
     df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
 
-# ============================================
-# REMOVE INVALID COORDINATES
-# ============================================
+    df = df.dropna(subset=["Latitude", "Longitude"])
 
-cold_df = cold_df.dropna(subset=["Latitude", "Longitude"])
-rail_df = rail_df.dropna(subset=["Latitude", "Longitude"])
-airport_df = airport_df.dropna(subset=["Latitude", "Longitude"])
-mandi_df = mandi_df.dropna(subset=["Latitude", "Longitude"])
+    return df
 
-# ============================================
-# CREATE MAP
-# ============================================
+# =====================================================
+# CLEAN DATA
+# =====================================================
+
+cold_df = standardize_columns(cold_df)
+rail_df = standardize_columns(rail_df)
+airport_df = standardize_columns(airport_df)
+mandi_df = standardize_columns(mandi_df)
+
+# =====================================================
+# VERIFY DATA
+# =====================================================
+
+print("Cold Storage Columns:", cold_df.columns)
+print("Railway Columns:", rail_df.columns)
+print("Airport Columns:", airport_df.columns)
+print("Mandi Columns:", mandi_df.columns)
+
+print("Railway Records:", len(rail_df))
+print("Cold Storage Records:", len(cold_df))
+
+# =====================================================
+# CREATE DASH APP
+# =====================================================
+
+app = Dash(__name__)
+server = app.server
+
+# =====================================================
+# INITIAL MAP
+# =====================================================
 
 fig = go.Figure()
 
-# ============================================
-# ADD COLD STORAGE MARKERS
-# ============================================
+# Bihar boundary
+fig.add_trace(
+    go.Choroplethmapbox(
+        geojson=bihar_geojson,
+        locations=[0],
+        z=[1],
+        colorscale=[[0, "lightgrey"], [1, "lightgrey"]],
+        showscale=False,
+        marker_opacity=0.2,
+        marker_line_width=1
+    )
+)
 
-fig.add_trace(go.Scattermapbox(
-    lat=cold_df["Latitude"],
-    lon=cold_df["Longitude"],
-    mode='markers',
-    marker=go.scattermapbox.Marker(
-        size=10,
-        color='blue'
-    ),
-    text=cold_df["Name"],
-    name="Cold Storage"
-))
+# Cold storage markers
+fig.add_trace(
+    go.Scattermapbox(
+        lat=cold_df["Latitude"],
+        lon=cold_df["Longitude"],
+        mode="markers",
+        marker=go.scattermapbox.Marker(
+            size=8,
+            color="blue"
+        ),
+        text=cold_df["Name"],
+        name="Cold Storage"
+    )
+)
 
-# ============================================
-# ADD RAILWAY STATION MARKERS
-# ============================================
+# Railway station markers
+fig.add_trace(
+    go.Scattermapbox(
+        lat=rail_df["Latitude"],
+        lon=rail_df["Longitude"],
+        mode="markers",
+        marker=go.scattermapbox.Marker(
+            size=9,
+            color="red"
+        ),
+        text=rail_df["Name"],
+        name="Railway Station"
+    )
+)
 
-fig.add_trace(go.Scattermapbox(
-    lat=rail_df["Latitude"],
-    lon=rail_df["Longitude"],
-    mode='markers',
-    marker=go.scattermapbox.Marker(
-        size=10,
-        color='red'
-    ),
-    text=rail_df["Name"],
-    name="Railway Stations"
-))
+# Airport markers
+fig.add_trace(
+    go.Scattermapbox(
+        lat=airport_df["Latitude"],
+        lon=airport_df["Longitude"],
+        mode="markers",
+        marker=go.scattermapbox.Marker(
+            size=10,
+            color="green"
+        ),
+        text=airport_df["Name"],
+        name="Airport"
+    )
+)
 
-# ============================================
-# ADD AIRPORT MARKERS
-# ============================================
+# Mandi markers
+fig.add_trace(
+    go.Scattermapbox(
+        lat=mandi_df["Latitude"],
+        lon=mandi_df["Longitude"],
+        mode="markers",
+        marker=go.scattermapbox.Marker(
+            size=7,
+            color="orange"
+        ),
+        text=mandi_df["Name"],
+        name="Mandis"
+    )
+)
 
-fig.add_trace(go.Scattermapbox(
-    lat=airport_df["Latitude"],
-    lon=airport_df["Longitude"],
-    mode='markers',
-    marker=go.scattermapbox.Marker(
-        size=10,
-        color='green'
-    ),
-    text=airport_df["Name"],
-    name="Airports"
-))
-
-# ============================================
-# ADD MANDI MARKERS
-# ============================================
-
-fig.add_trace(go.Scattermapbox(
-    lat=mandi_df["Latitude"],
-    lon=mandi_df["Longitude"],
-    mode='markers',
-    marker=go.scattermapbox.Marker(
-        size=10,
-        color='orange'
-    ),
-    text=mandi_df["Name"],
-    name="Mandis"
-))
-
-# ============================================
-# MAP LAYOUT
-# ============================================
-
+# Map Layout
 fig.update_layout(
     mapbox_style="open-street-map",
-    mapbox_zoom=5,
-    mapbox_center={"lat": 25.5, "lon": 85.3},
+    mapbox_zoom=6,
+    mapbox_center={"lat": 25.6, "lon": 85.1},
     margin={"r":0,"t":0,"l":0,"b":0},
     height=700
 )
 
-# ============================================
-# DISTRICT WISE COLD STORAGE CHART
-# ============================================
+# =====================================================
+# DISTRICT CHART
+# =====================================================
 
 district_chart = px.bar(
     cold_df.groupby("District").size().reset_index(name="Cold Storages"),
@@ -210,9 +205,9 @@ district_chart = px.bar(
     title="District Wise Cold Storages"
 )
 
-# ============================================
+# =====================================================
 # APP LAYOUT
-# ============================================
+# =====================================================
 
 app.layout = html.Div([
 
@@ -220,7 +215,7 @@ app.layout = html.Div([
         "Bihar GIS Dashboard",
         style={
             "textAlign": "center",
-            "marginBottom": "20px"
+            "color": "#003366"
         }
     ),
 
@@ -231,22 +226,24 @@ app.layout = html.Div([
             html.H2("Railway Station Buffer"),
 
             dcc.Dropdown(
-                id='rail-dropdown',
+                id="station-dropdown",
                 options=[
-                    {"label": i, "value": i}
-                    for i in rail_df["Name"].dropna().unique()
+                    {
+                        "label": name,
+                        "value": name
+                    }
+                    for name in sorted(rail_df["Name"].unique())
                 ],
                 placeholder="Select Railway Station"
             ),
 
-            html.Br(),
-
             dcc.Dropdown(
-                id='buffer-distance',
+                id="buffer-distance",
                 options=[
                     {"label": "5 KM", "value": 5},
                     {"label": "10 KM", "value": 10},
-                    {"label": "20 KM", "value": 20}
+                    {"label": "20 KM", "value": 20},
+                    {"label": "50 KM", "value": 50},
                 ],
                 value=5
             ),
@@ -255,16 +252,15 @@ app.layout = html.Div([
 
             html.Button(
                 "Generate Buffer",
-                id='buffer-btn',
+                id="generate-button",
                 n_clicks=0,
                 style={
                     "backgroundColor": "#007BFF",
                     "color": "white",
-                    "border": "none",
                     "padding": "12px",
+                    "border": "none",
                     "width": "100%",
-                    "borderRadius": "5px",
-                    "fontWeight": "bold"
+                    "fontSize": "18px"
                 }
             ),
 
@@ -278,15 +274,15 @@ app.layout = html.Div([
         ],
         style={
             "width": "30%",
+            "padding": "20px",
             "display": "inline-block",
-            "verticalAlign": "top",
-            "padding": "20px"
+            "verticalAlign": "top"
         }),
 
         html.Div([
 
             dcc.Graph(
-                id='map',
+                id="map",
                 figure=fig
             )
 
@@ -300,15 +296,59 @@ app.layout = html.Div([
 
 ])
 
-# ============================================
+# =====================================================
+# BUFFER CALLBACK
+# =====================================================
+
+@app.callback(
+    Output("map", "figure"),
+    Input("generate-button", "n_clicks"),
+    Input("station-dropdown", "value"),
+    Input("buffer-distance", "value")
+)
+
+def update_map(n_clicks, selected_station, buffer_distance):
+
+    updated_fig = go.Figure(fig)
+
+    if selected_station:
+
+        station_row = rail_df[
+            rail_df["Name"] == selected_station
+        ]
+
+        if not station_row.empty:
+
+            lat = station_row.iloc[0]["Latitude"]
+            lon = station_row.iloc[0]["Longitude"]
+
+            updated_fig.add_trace(
+                go.Scattermapbox(
+                    lat=[lat],
+                    lon=[lon],
+                    mode="markers",
+                    marker=go.scattermapbox.Marker(
+                        size=25,
+                        color="yellow"
+                    ),
+                    text=[selected_station],
+                    name="Selected Station"
+                )
+            )
+
+            updated_fig.update_layout(
+                mapbox_center={
+                    "lat": lat,
+                    "lon": lon
+                },
+                mapbox_zoom=8
+            )
+
+    return updated_fig
+
+# =====================================================
 # RUN SERVER
-# ============================================
+# =====================================================
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-
-    app.run(
-        host='0.0.0.0',
-        port=port,
-        debug=False
-    )
+if __name__ == "__main__":
+    app.run(debug=True)
