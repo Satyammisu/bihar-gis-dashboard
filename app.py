@@ -1,25 +1,33 @@
-import pandas as pd
 import json
+import math
+import pandas as pd
+
 from dash import Dash, dcc, html, Input, Output
 import plotly.express as px
 import plotly.graph_objects as go
 
-# =====================================================
-# LOAD BIHAR BOUNDARY GEOJSON
-# =====================================================
+# =========================================================
+# APP INITIALIZATION
+# =========================================================
+
+app = Dash(__name__)
+server = app.server
+
+# =========================================================
+# LOAD BIHAR BOUNDARY
+# =========================================================
 
 with open("bihar_boundary.geojson", "r", encoding="utf-8") as f:
     bihar_geojson = json.load(f)
 
-# =====================================================
+# =========================================================
 # SAFE CSV LOADER
-# =====================================================
+# =========================================================
 
 def load_csv(file_name):
 
     df = pd.read_csv(file_name, encoding="utf-8")
 
-    # normalize column names
     df.columns = (
         df.columns
         .str.strip()
@@ -29,18 +37,18 @@ def load_csv(file_name):
 
     return df
 
-# =====================================================
-# LOAD ALL DATASETS
-# =====================================================
+# =========================================================
+# LOAD DATA
+# =========================================================
 
 cold_df = load_csv("cold_storage.csv")
 rail_df = load_csv("railway_stations.csv")
 airport_df = load_csv("airport.csv")
 mandi_df = load_csv("mandis.csv")
 
-# =====================================================
+# =========================================================
 # STANDARDIZE COLUMNS
-# =====================================================
+# =========================================================
 
 def standardize_columns(df):
 
@@ -78,125 +86,116 @@ def standardize_columns(df):
 
     return df
 
-# =====================================================
-# CLEAN DATA
-# =====================================================
-
 cold_df = standardize_columns(cold_df)
 rail_df = standardize_columns(rail_df)
 airport_df = standardize_columns(airport_df)
 mandi_df = standardize_columns(mandi_df)
 
-# =====================================================
-# VERIFY DATA
-# =====================================================
+# =========================================================
+# HAVERSINE DISTANCE
+# =========================================================
 
-print("Cold Storage Columns:", cold_df.columns)
-print("Railway Columns:", rail_df.columns)
-print("Airport Columns:", airport_df.columns)
-print("Mandi Columns:", mandi_df.columns)
+def haversine(lat1, lon1, lat2, lon2):
 
-print("Railway Records:", len(rail_df))
-print("Cold Storage Records:", len(cold_df))
+    R = 6371
 
-# =====================================================
-# CREATE DASH APP
-# =====================================================
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
 
-app = Dash(__name__)
-server = app.server
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlon / 2) ** 2
+    )
 
-# =====================================================
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return R * c
+
+# =========================================================
 # INITIAL MAP
-# =====================================================
+# =========================================================
 
-fig = go.Figure()
+def create_base_map():
 
-# Bihar boundary
-fig.add_trace(
-    go.Choroplethmapbox(
-        geojson=bihar_geojson,
-        locations=[0],
-        z=[1],
-        colorscale=[[0, "lightgrey"], [1, "lightgrey"]],
-        showscale=False,
-        marker_opacity=0.2,
-        marker_line_width=1
+    fig = go.Figure()
+
+    # Cold Storage
+    fig.add_trace(
+        go.Scattermapbox(
+            lat=cold_df["Latitude"],
+            lon=cold_df["Longitude"],
+            mode="markers",
+            marker=dict(size=10, color="blue"),
+            text=cold_df["Name"],
+            name="Cold Storage"
+        )
     )
-)
 
-# Cold storage markers
-fig.add_trace(
-    go.Scattermapbox(
-        lat=cold_df["Latitude"],
-        lon=cold_df["Longitude"],
-        mode="markers",
-        marker=go.scattermapbox.Marker(
-            size=8,
-            color="blue"
-        ),
-        text=cold_df["Name"],
-        name="Cold Storage"
+    # Railway
+    fig.add_trace(
+        go.Scattermapbox(
+            lat=rail_df["Latitude"],
+            lon=rail_df["Longitude"],
+            mode="markers",
+            marker=dict(size=12, color="red"),
+            text=rail_df["Name"],
+            name="Railway Station"
+        )
     )
-)
 
-# Railway station markers
-fig.add_trace(
-    go.Scattermapbox(
-        lat=rail_df["Latitude"],
-        lon=rail_df["Longitude"],
-        mode="markers",
-        marker=go.scattermapbox.Marker(
-            size=9,
-            color="red"
-        ),
-        text=rail_df["Name"],
-        name="Railway Station"
+    # Airports
+    fig.add_trace(
+        go.Scattermapbox(
+            lat=airport_df["Latitude"],
+            lon=airport_df["Longitude"],
+            mode="markers",
+            marker=dict(size=11, color="green"),
+            text=airport_df["Name"],
+            name="Airport"
+        )
     )
-)
 
-# Airport markers
-fig.add_trace(
-    go.Scattermapbox(
-        lat=airport_df["Latitude"],
-        lon=airport_df["Longitude"],
-        mode="markers",
-        marker=go.scattermapbox.Marker(
-            size=10,
-            color="green"
-        ),
-        text=airport_df["Name"],
-        name="Airport"
+    # Mandis
+    fig.add_trace(
+        go.Scattermapbox(
+            lat=mandi_df["Latitude"],
+            lon=mandi_df["Longitude"],
+            mode="markers",
+            marker=dict(size=9, color="orange"),
+            text=mandi_df["Name"],
+            name="Mandis"
+        )
     )
-)
 
-# Mandi markers
-fig.add_trace(
-    go.Scattermapbox(
-        lat=mandi_df["Latitude"],
-        lon=mandi_df["Longitude"],
-        mode="markers",
-        marker=go.scattermapbox.Marker(
-            size=7,
-            color="orange"
-        ),
-        text=mandi_df["Name"],
-        name="Mandis"
+    fig.update_layout(
+        mapbox_style="open-street-map",
+        mapbox_zoom=6,
+        mapbox_center={"lat": 25.7, "lon": 85.3},
+        height=700,
+        margin={"r":0,"t":0,"l":0,"b":0},
+        legend=dict(
+            bgcolor="white",
+            bordercolor="black",
+            borderwidth=1
+        )
     )
-)
 
-# Map Layout
-fig.update_layout(
-    mapbox_style="open-street-map",
-    mapbox_zoom=6,
-    mapbox_center={"lat": 25.6, "lon": 85.1},
-    margin={"r":0,"t":0,"l":0,"b":0},
-    height=700
-)
+    return fig
 
-# =====================================================
+# =========================================================
+# KPI VALUES
+# =========================================================
+
+total_cold = len(cold_df)
+total_rail = len(rail_df)
+total_airport = len(airport_df)
+total_mandi = len(mandi_df)
+
+# =========================================================
 # DISTRICT CHART
-# =====================================================
+# =========================================================
 
 district_chart = px.bar(
     cold_df.groupby("District").size().reset_index(name="Cold Storages"),
@@ -205,150 +204,212 @@ district_chart = px.bar(
     title="District Wise Cold Storages"
 )
 
-# =====================================================
+# =========================================================
 # APP LAYOUT
-# =====================================================
+# =========================================================
 
 app.layout = html.Div([
 
-    html.H1(
-        "Bihar GIS Dashboard",
-        style={
-            "textAlign": "center",
-            "color": "#003366"
-        }
-    ),
+    # HEADER
+    html.Div([
 
+        html.H1(
+            "Bihar GIS Dashboard",
+            style={
+                "textAlign": "center",
+                "color": "white",
+                "padding": "20px"
+            }
+        )
+
+    ], style={
+        "backgroundColor": "#0d47a1"
+    }),
+
+    # KPI CARDS
+    html.Div([
+
+        html.Div([
+            html.H3(total_cold),
+            html.P("Cold Storages")
+        ], className="card"),
+
+        html.Div([
+            html.H3(total_rail),
+            html.P("Railway Stations")
+        ], className="card"),
+
+        html.Div([
+            html.H3(total_airport),
+            html.P("Airports")
+        ], className="card"),
+
+        html.Div([
+            html.H3(total_mandi),
+            html.P("Mandis")
+        ], className="card"),
+
+    ], style={
+        "display": "flex",
+        "justifyContent": "space-around",
+        "padding": "20px"
+    }),
+
+    # CONTROL PANEL
     html.Div([
 
         html.Div([
 
-            html.H2("Railway Station Buffer"),
+            html.H3("Railway Station Buffer"),
 
             dcc.Dropdown(
-                id="station-dropdown",
+                id="rail-dropdown",
                 options=[
                     {
-                        "label": name,
-                        "value": name
+                        "label": i,
+                        "value": i
                     }
-                    for name in sorted(rail_df["Name"].unique())
+                    for i in sorted(rail_df["Name"].unique())
                 ],
-                placeholder="Select Railway Station"
+                placeholder="Select Railway Station",
+                searchable=True
             ),
 
+            html.Br(),
+
             dcc.Dropdown(
-                id="buffer-distance",
+                id="buffer-dropdown",
                 options=[
                     {"label": "5 KM", "value": 5},
                     {"label": "10 KM", "value": 10},
-                    {"label": "20 KM", "value": 20},
+                    {"label": "25 KM", "value": 25},
                     {"label": "50 KM", "value": 50},
                 ],
-                value=5
-            ),
-
-            html.Br(),
-
-            html.Button(
-                "Generate Buffer",
-                id="generate-button",
-                n_clicks=0,
-                style={
-                    "backgroundColor": "#007BFF",
-                    "color": "white",
-                    "padding": "12px",
-                    "border": "none",
-                    "width": "100%",
-                    "fontSize": "18px"
-                }
-            ),
-
-            html.Br(),
-            html.Br(),
-
-            dcc.Graph(
-                figure=district_chart
+                value=10
             )
 
-        ],
-        style={
+        ], style={
             "width": "30%",
             "padding": "20px",
-            "display": "inline-block",
-            "verticalAlign": "top"
-        }),
-
-        html.Div([
-
-            dcc.Graph(
-                id="map",
-                figure=fig
-            )
-
-        ],
-        style={
-            "width": "68%",
-            "display": "inline-block"
+            "backgroundColor": "white",
+            "borderRadius": "10px",
+            "boxShadow": "0px 0px 10px lightgray"
         })
 
-    ])
+    ], style={
+        "padding": "20px"
+    }),
 
-])
+    # MAP
+    html.Div([
 
-# =====================================================
-# BUFFER CALLBACK
-# =====================================================
+        dcc.Graph(
+            id="gis-map",
+            figure=create_base_map()
+        )
+
+    ], style={
+        "padding": "20px"
+    }),
+
+    # CHART
+    html.Div([
+
+        dcc.Graph(
+            figure=district_chart
+        )
+
+    ], style={
+        "padding": "20px"
+    })
+
+], style={
+    "backgroundColor": "#f4f6f9",
+    "fontFamily": "Arial"
+})
+
+# =========================================================
+# CALLBACK
+# =========================================================
 
 @app.callback(
-    Output("map", "figure"),
-    Input("generate-button", "n_clicks"),
-    Input("station-dropdown", "value"),
-    Input("buffer-distance", "value")
+    Output("gis-map", "figure"),
+    [
+        Input("rail-dropdown", "value"),
+        Input("buffer-dropdown", "value")
+    ]
 )
 
-def update_map(n_clicks, selected_station, buffer_distance):
+def update_map(selected_station, buffer_km):
 
-    updated_fig = go.Figure(fig)
+    fig = create_base_map()
 
-    if selected_station:
+    if selected_station is None:
+        return fig
 
-        station_row = rail_df[
-            rail_df["Name"] == selected_station
-        ]
+    station = rail_df[rail_df["Name"] == selected_station]
 
-        if not station_row.empty:
+    if station.empty:
+        return fig
 
-            lat = station_row.iloc[0]["Latitude"]
-            lon = station_row.iloc[0]["Longitude"]
+    station_lat = station.iloc[0]["Latitude"]
+    station_lon = station.iloc[0]["Longitude"]
 
-            updated_fig.add_trace(
-                go.Scattermapbox(
-                    lat=[lat],
-                    lon=[lon],
-                    mode="markers",
-                    marker=go.scattermapbox.Marker(
-                        size=25,
-                        color="yellow"
-                    ),
-                    text=[selected_station],
-                    name="Selected Station"
-                )
+    # Highlight selected railway station
+    fig.add_trace(
+        go.Scattermapbox(
+            lat=[station_lat],
+            lon=[station_lon],
+            mode="markers",
+            marker=dict(size=20, color="yellow"),
+            text=[selected_station],
+            name="Selected Station"
+        )
+    )
+
+    # Find nearby cold storages
+    nearby = []
+
+    for _, row in cold_df.iterrows():
+
+        dist = haversine(
+            station_lat,
+            station_lon,
+            row["Latitude"],
+            row["Longitude"]
+        )
+
+        if dist <= buffer_km:
+            nearby.append(row)
+
+    if len(nearby) > 0:
+
+        nearby_df = pd.DataFrame(nearby)
+
+        fig.add_trace(
+            go.Scattermapbox(
+                lat=nearby_df["Latitude"],
+                lon=nearby_df["Longitude"],
+                mode="markers",
+                marker=dict(size=14, color="cyan"),
+                text=nearby_df["Name"],
+                name="Nearby Cold Storages"
             )
+        )
 
-            updated_fig.update_layout(
-                mapbox_center={
-                    "lat": lat,
-                    "lon": lon
-                },
-                mapbox_zoom=8
-            )
+    fig.update_layout(
+        mapbox_zoom=7,
+        mapbox_center={
+            "lat": station_lat,
+            "lon": station_lon
+        }
+    )
 
-    return updated_fig
+    return fig
 
-# =====================================================
-# RUN SERVER
-# =====================================================
+# =========================================================
+# RUN APP
+# =========================================================
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run_server(debug=False)
