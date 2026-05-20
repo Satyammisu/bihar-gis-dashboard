@@ -829,25 +829,59 @@ def update_dashboard(
             )
 
             # =============================================
-            # BUFFER CIRCLE
-            # =============================================
+# BUFFER CIRCLE
+# =============================================
 
-            theta = [
-                i * (360 / 100)
-                for i in range(101)
-            ]
+theta = [
+    i * (360 / 100)
+    for i in range(101)
+]
 
-            circle_lat = []
-            circle_lon = []
+circle_lat = []
+circle_lon = []
 
-            for angle in theta:
+for angle in theta:
 
-                dx = (
-                    buffer_km / 111
-                ) * math.cos(
-                    math.radians(angle)
-                )
+    dx = (
+        buffer_km / 111
+    ) * math.cos(
+        math.radians(angle)
+    )
 
-                dy = (
-                    buffer_km / 111
-                ) * math.sin(
+    dy = (
+        buffer_km / 111
+    ) * math.sin(
+        math.radians(angle)
+    )
+
+    circle_lat.append(
+        station_lat + dy
+    )
+
+    circle_lon.append(
+        station_lon + dx
+    )
+
+fig.add_trace(
+
+    go.Scattermapbox(
+
+        lat=circle_lat,
+        lon=circle_lon,
+
+        mode="lines",
+
+        fill="toself",
+
+        fillcolor="rgba(255,0,0,0.15)",
+
+        line=dict(
+            color="red",
+            width=2
+        ),
+
+        name=f"{buffer_km} KM Buffer"
+
+    )
+
+)
