@@ -1,6 +1,7 @@
 from flask import Flask, render_template_string
 import json
 import os
+from math import radians, cos, sin, asin, sqrt
 
 app = Flask(__name__)
 
@@ -9,93 +10,69 @@ app = Flask(__name__)
 # =========================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = BASE_DIR
 
 # =========================================================
 # LOAD GEOJSON
 # =========================================================
 
 def load_geojson(filename):
+    filepath = os.path.join(DATA_DIR, filename)
 
-    path = os.path.join(DATA_DIR, filename)
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            return json.load(f)
 
-    if not os.path.exists(path):
-
-        return {
-            "type": "FeatureCollection",
-            "features": []
-        }
-
-    with open(path, "r", encoding="utf-8") as f:
-
-        return json.load(f)
+    return {"type": "FeatureCollection", "features": []}
 
 # =========================================================
-# LOAD FILES
+# LOAD DATA
 # =========================================================
 
-bihar_boundary = load_geojson("bihar_boundary.geojson")
 cold_storage = load_geojson("cold_storage.geojson")
 railway_station = load_geojson("railway_station.geojson")
 airport = load_geojson("airport.geojson")
 mandis = load_geojson("mandis.geojson")
+bihar_boundary = load_geojson("bihar_boundary.geojson")
 
 # =========================================================
-# SUMMARY COUNTS
+# HAVERSINE DISTANCE
 # =========================================================
 
-cold_count = len(cold_storage["features"])
-rail_count = len(railway_station["features"])
-airport_count = len(airport["features"])
-mandi_count = len(mandis["features"])
+def haversine(lat1, lon1, lat2, lon2):
+
+    lon1, lat1, lon2, lat2 = map(
+        radians,
+        [lon1, lat1, lon2, lat2]
+    )
+
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+
+    c = 2 * asin(sqrt(a))
+
+    r = 6371
+
+    return round(c * r, 2)
 
 # =========================================================
-# DISTRICT COUNTS
+# DISTRICT SUMMARY
 # =========================================================
 
 district_counts = {}
 
-for f in cold_storage["features"]:
+for feature in cold_storage.get("features", []):
 
-    props = f.get("properties", {})
+    props = feature.get("properties", {})
 
-    district = (
-        props.get("District")
-        or props.get("district")
-        or props.get("DISTRICT")
-        or props.get("dist_name")
-        or "Unknown"
-    )
+    district = props.get("district", "Unknown")
 
     district_counts[district] = district_counts.get(district, 0) + 1
 
-# =========================================================
-# RAILWAY DROPDOWN LIST
-# =========================================================
-
-railway_list = []
-
-for f in railway_station["features"]:
-
-    props = f.get("properties", {})
-
-    name = (
-        props.get("Name")
-        or props.get("name")
-        or props.get("Station")
-        or props.get("station")
-        or props.get("Railway")
-        or "Railway Station"
-    )
-
-    lat = f["geometry"]["coordinates"][1]
-    lon = f["geometry"]["coordinates"][0]
-
-    railway_list.append({
-        "name": name,
-        "lat": lat,
-        "lon": lon
-    })
+district_labels = list(district_counts.keys())
+district_values = list(district_counts.values())
 
 # =========================================================
 # HTML TEMPLATE
@@ -104,14 +81,13 @@ for f in railway_station["features"]:
 HTML = """
 
 <!DOCTYPE html>
-
 <html>
 
 <head>
 
-<meta charset="utf-8">
+<title>Bihar GIS Dashboard</title>
 
-<title>Bihar Government GIS Dashboard</title>
+<meta charset="utf-8"/>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -125,133 +101,110 @@ href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
 
 body{
-    margin:0;
-    padding:0;
-    font-family:Arial,sans-serif;
+margin:0;
+padding:0;
+font-family:Arial;
+background:#f4f7fb;
 }
 
-#container{
-    display:flex;
-    height:100vh;
+.container{
+display:flex;
+height:100vh;
 }
 
-#sidebar{
-    width:420px;
-    overflow-y:auto;
-    background:#eef3f8;
-    padding:15px;
-    box-shadow:0 0 10px rgba(0,0,0,0.2);
+.sidebar{
+width:30%;
+overflow-y:auto;
+padding:15px;
+background:white;
+}
+
+.map-container{
+width:70%;
 }
 
 #map{
-    flex:1;
-}
-
-.header{
-    background:#0d47a1;
-    color:white;
-    padding:15px;
-    border-radius:10px;
-    margin-bottom:20px;
-    text-align:center;
+height:100vh;
+width:100%;
 }
 
 .card{
-    background:white;
-    border-radius:14px;
-    border:1px solid #dce3ea;
-    padding:15px;
-    margin-bottom:20px;
-    box-shadow:0 2px 8px rgba(0,0,0,0.1);
+background:white;
+padding:15px;
+border-radius:10px;
+margin-bottom:15px;
+box-shadow:0px 2px 5px rgba(0,0,0,0.1);
 }
 
-.card h2{
-    margin-top:0;
-    color:#0d47a1;
+h1{
+background:#0b4dbb;
+color:white;
+padding:20px;
+border-radius:10px;
+font-size:36px;
 }
 
 .summary-box{
-    background:#1565c0;
-    color:white;
-    padding:12px;
-    border-radius:8px;
-    margin-bottom:10px;
-    font-size:20px;
-    font-weight:bold;
+background:linear-gradient(to right,#0b4dbb,#1f78ff);
+padding:15px;
+color:white;
+border-radius:10px;
+margin-bottom:10px;
+font-size:24px;
+font-weight:bold;
 }
 
-select{
-    width:100%;
-    padding:12px;
-    margin-bottom:10px;
-    border-radius:5px;
-    border:1px solid #ccc;
+select,button{
+width:100%;
+padding:12px;
+margin-top:10px;
+font-size:16px;
+border-radius:6px;
+border:1px solid #ccc;
 }
 
 button{
-    width:100%;
-    padding:12px;
-    border:none;
-    background:#1565c0;
-    color:white;
-    border-radius:5px;
-    cursor:pointer;
-    font-size:16px;
-    font-weight:bold;
+background:#1565c0;
+color:white;
+border:none;
+cursor:pointer;
+font-weight:bold;
 }
 
 button:hover{
-    background:#0d47a1;
-}
-
-.table-container{
-    max-height:350px;
-    overflow:auto;
+background:#0d47a1;
 }
 
 table{
-    width:100%;
-    border-collapse:collapse;
+width:100%;
+border-collapse:collapse;
+font-size:12px;
 }
 
 table th{
-    background:#0d47a1;
-    color:white;
-    padding:8px;
-    font-size:13px;
-    position:sticky;
-    top:0;
+background:#0b4dbb;
+color:white;
+padding:8px;
 }
 
 table td{
-    border:1px solid #ddd;
-    padding:6px;
-    font-size:12px;
-}
-
-.popup-btn{
-    width:100%;
-    background:#1565c0;
-    color:white;
-    border:none;
-    padding:10px;
-    border-radius:5px;
-    cursor:pointer;
+padding:8px;
+border:1px solid #ddd;
 }
 
 .legend{
-    background:white;
-    padding:10px;
-    border-radius:6px;
-    line-height:25px;
+background:white;
+padding:10px;
+line-height:25px;
+color:#333;
 }
 
-.legend span{
-    width:15px;
-    height:15px;
-    display:inline-block;
-    border-radius:50%;
-    margin-right:5px;
+.legend i{
+width:18px;
+height:18px;
+float:left;
+margin-right:8px;
+opacity:0.9;
 }
 
 </style>
@@ -260,34 +213,30 @@ table td{
 
 <body>
 
-<div id="container">
+<div class="container">
 
-<div id="sidebar">
-
-<div class="header">
+<div class="sidebar">
 
 <h1>Bihar GIS Dashboard</h1>
-
-</div>
 
 <div class="card">
 
 <h2>Summary</h2>
 
 <div class="summary-box">
-Cold Storages: {{ cold_count }}
+Cold Storages: {{cold_count}}
 </div>
 
 <div class="summary-box">
-Railway Stations: {{ rail_count }}
+Railway Stations: {{rail_count}}
 </div>
 
 <div class="summary-box">
-Airports: {{ airport_count }}
+Airports: {{airport_count}}
 </div>
 
 <div class="summary-box">
-Mandis: {{ mandi_count }}
+Mandis: {{mandi_count}}
 </div>
 
 </div>
@@ -298,9 +247,15 @@ Mandis: {{ mandi_count }}
 
 <select id="stationSelect">
 
-<option value="">
-Select Railway Station
+<option value="">Select Railway Station</option>
+
+{% for station in station_names %}
+
+<option value="{{station}}">
+{{station}}
 </option>
+
+{% endfor %}
 
 </select>
 
@@ -309,7 +264,6 @@ Select Railway Station
 <option value="5">5 KM</option>
 <option value="10">10 KM</option>
 <option value="20">20 KM</option>
-<option value="50">50 KM</option>
 
 </select>
 
@@ -323,9 +277,7 @@ Generate Buffer
 
 <h2>District Wise Cold Storages</h2>
 
-<div style="height:350px;">
 <canvas id="districtChart"></canvas>
-</div>
 
 </div>
 
@@ -333,26 +285,31 @@ Generate Buffer
 
 <h2>Cold Storage Details</h2>
 
-<div class="table-container">
-
 <table>
 
-<thead>
-
 <tr>
-
 <th>District</th>
 <th>Name</th>
 <th>Capacity</th>
 <th>Distance</th>
 <th>Latitude</th>
 <th>Longitude</th>
+</tr>
+
+{% for row in table_data %}
+
+<tr>
+
+<td>{{row.district}}</td>
+<td>{{row.name}}</td>
+<td>{{row.capacity}}</td>
+<td>{{row.distance}}</td>
+<td>{{row.lat}}</td>
+<td>{{row.lon}}</td>
 
 </tr>
 
-</thead>
-
-<tbody id="coldTable"></tbody>
+{% endfor %}
 
 </table>
 
@@ -360,17 +317,15 @@ Generate Buffer
 
 </div>
 
-</div>
+<div class="map-container">
 
 <div id="map"></div>
 
 </div>
 
-<script>
+</div>
 
-// =======================================================
-// MAP
-// =======================================================
+<script>
 
 var map = L.map('map').setView([25.6,85.1],7);
 
@@ -381,163 +336,26 @@ maxZoom:19
 }
 ).addTo(map);
 
-// =======================================================
-// BIHAR BOUNDARY
-// =======================================================
+var coldData = {{cold_storage|safe}};
+var railData = {{railway_station|safe}};
+var airportData = {{airport|safe}};
+var mandiData = {{mandis|safe}};
+var boundaryData = {{bihar_boundary|safe}};
 
-var biharBoundary = {{ bihar_boundary|safe }};
-
-L.geoJSON(biharBoundary,{
+L.geoJSON(boundaryData,{
 style:{
 color:'black',
-weight:3,
+weight:2,
 fillOpacity:0
 }
 }).addTo(map);
 
-// =======================================================
-// DISTANCE CALCULATION
-// =======================================================
-
-function calculateDistance(lat1, lon1, lat2, lon2) {
-
-    var R = 6371;
-
-    var dLat = (lat2-lat1) * Math.PI / 180;
-    var dLon = (lon2-lon1) * Math.PI / 180;
-
-    var a =
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1*Math.PI/180) *
-        Math.cos(lat2*Math.PI/180) *
-        Math.sin(dLon/2) *
-        Math.sin(dLon/2);
-
-    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-    return (R * c).toFixed(2);
-
-}
-
-// =======================================================
-// COLD STORAGE
-// =======================================================
-
-var coldStorageData = {{ cold_storage|safe }};
-
-var coldLayer = L.geoJSON(coldStorageData,{
+var coldLayer = L.geoJSON(coldData,{
 
 pointToLayer:function(feature,latlng){
 
 return L.circleMarker(latlng,{
-radius:7,
-fillColor:'blue',
-color:'white',
-weight:1,
-fillOpacity:1
-});
-
-},
-
-onEachFeature:function(feature,layer){
-
-var p = feature.properties || {};
-
-var district =
-p.District ||
-p.district ||
-p.DISTRICT ||
-p.dist_name ||
-"N/A";
-
-var name =
-p.Name ||
-p.name ||
-p.NAME ||
-p.storage_name ||
-p.Storage_Name ||
-p.cold_storage ||
-p.ColdStorage ||
-p.cold_name ||
-"Cold Storage";
-
-var capacity =
-p.Capacity ||
-p.capacity ||
-p.CAPACITY ||
-p.Capacity_MT ||
-p.capacity_mt ||
-p.Storage_Capacity ||
-p.storage_capacity ||
-p.cap_mt ||
-p.cap ||
-"N/A";
-
-var lat = feature.geometry.coordinates[1];
-var lon = feature.geometry.coordinates[0];
-
-var distance = "N/A";
-
-if(window.selectedRailway){
-
-distance = calculateDistance(
-lat,
-lon,
-window.selectedRailway.lat,
-window.selectedRailway.lon
-) + " KM";
-
-}
-
-layer.bindTooltip(
-"<b>" + name + "</b>",
-{
-sticky:true,
-direction:'top',
-opacity:1
-}
-);
-
-layer.bindPopup(
-
-"<b>Cold Storage</b><br><br>" +
-
-"<b>District:</b> " + district + "<br>" +
-
-"<b>Name:</b> " + name + "<br>" +
-
-"<b>Capacity:</b> " + capacity + "<br>" +
-
-"<b>Distance:</b> " + distance + "<br>" +
-
-"<b>Latitude:</b> " + lat + "<br>" +
-
-"<b>Longitude:</b> " + lon + "<br><br>" +
-
-"<button class='popup-btn' onclick=\\"window.open('https://www.google.com/maps/search/?api=1&query=" +
-
-lat + "," + lon +
-
-"','_blank')\\">Navigate</button>"
-
-);
-
-}
-
-}).addTo(map);
-
-// =======================================================
-// RAILWAY STATION
-// =======================================================
-
-var railwayData = {{ railway_station|safe }};
-
-var railwayLayer = L.geoJSON(railwayData,{
-
-pointToLayer:function(feature,latlng){
-
-return L.circleMarker(latlng,{
-radius:7,
+radius:6,
 fillColor:'red',
 color:'white',
 weight:1,
@@ -548,62 +366,50 @@ fillOpacity:1
 
 onEachFeature:function(feature,layer){
 
-var p = feature.properties || {};
-
-var name =
-p.Name ||
-p.name ||
-p.Station ||
-p.station ||
-p.Railway ||
-"Railway Station";
-
-var lat = feature.geometry.coordinates[1];
-var lon = feature.geometry.coordinates[0];
-
-layer.bindTooltip(
-"<b>" + name + "</b>",
-{
-sticky:true,
-direction:'top',
-opacity:1
-}
-);
+var p = feature.properties;
 
 layer.bindPopup(
-
-"<b>Railway Station</b><br><br>" +
-
-"<b>Name:</b> " + name + "<br>" +
-
-"<b>Latitude:</b> " + lat + "<br>" +
-
-"<b>Longitude:</b> " + lon + "<br><br>" +
-
-"<button class='popup-btn' onclick=\\"window.open('https://www.google.com/maps/search/?api=1&query=" +
-
-lat + "," + lon +
-
-"','_blank')\\">Navigate</button>"
-
+"<b>Cold Storage</b><br>"+
+"District: "+(p.district || 'N/A')+"<br>"+
+"Capacity: "+(p.capacity || 'N/A')
 );
 
 }
 
 }).addTo(map);
 
-// =======================================================
-// AIRPORT
-// =======================================================
-
-var airportData = {{ airport|safe }};
-
-L.geoJSON(airportData,{
+var railLayer = L.geoJSON(railData,{
 
 pointToLayer:function(feature,latlng){
 
 return L.circleMarker(latlng,{
-radius:7,
+radius:6,
+fillColor:'blue',
+color:'white',
+weight:1,
+fillOpacity:1
+});
+
+},
+
+onEachFeature:function(feature,layer){
+
+var p = feature.properties;
+
+layer.bindPopup(
+"<b>Railway Station</b><br>"+
+(p.name || 'N/A')
+);
+
+}
+
+}).addTo(map);
+
+var airportLayer = L.geoJSON(airportData,{
+pointToLayer:function(feature,latlng){
+
+return L.circleMarker(latlng,{
+radius:6,
 fillColor:'green',
 color:'white',
 weight:1,
@@ -611,21 +417,13 @@ fillOpacity:1
 });
 
 }
-
 }).addTo(map);
 
-// =======================================================
-// MANDI
-// =======================================================
-
-var mandiData = {{ mandis|safe }};
-
-L.geoJSON(mandiData,{
-
+var mandiLayer = L.geoJSON(mandiData,{
 pointToLayer:function(feature,latlng){
 
 return L.circleMarker(latlng,{
-radius:7,
+radius:6,
 fillColor:'orange',
 color:'white',
 weight:1,
@@ -633,265 +431,132 @@ fillOpacity:1
 });
 
 }
-
 }).addTo(map);
-
-// =======================================================
-// RAILWAY DROPDOWN
-// =======================================================
-
-var railwayList = {{ railway_list|safe }};
-
-var select = document.getElementById("stationSelect");
-
-railwayList.forEach(function(item,index){
-
-var option = document.createElement("option");
-
-option.value = index;
-option.text = item.name;
-
-select.appendChild(option);
-
-});
-
-// =======================================================
-// BUFFER
-// =======================================================
-
-var bufferCircle;
 
 function generateBuffer(){
 
-var index =
+var stationName =
 document.getElementById("stationSelect").value;
 
-if(index === ""){
-alert("Please select railway station");
-return;
-}
-
 var distance =
-parseInt(document.getElementById("bufferDistance").value);
+document.getElementById("bufferDistance").value;
 
-var item = railwayList[index];
+railData.features.forEach(function(feature){
 
-window.selectedRailway = item;
+if(feature.properties.name == stationName){
 
-if(bufferCircle){
-map.removeLayer(bufferCircle);
-}
+var lat =
+feature.geometry.coordinates[1];
 
-bufferCircle = L.circle(
-[item.lat,item.lon],
-{
+var lon =
+feature.geometry.coordinates[0];
+
+L.circle([lat,lon],{
 radius:distance*1000,
 color:'green',
 fillOpacity:0.1
-}
-).addTo(map);
+}).addTo(map);
 
-map.setView([item.lat,item.lon],10);
-
-// ================================================
-// UPDATE TABLE DISTANCE
-// ================================================
-
-updateTable();
+map.setView([lat,lon],10);
 
 }
-
-// =======================================================
-// TABLE
-// =======================================================
-
-function updateTable(){
-
-var tbody = document.getElementById("coldTable");
-
-tbody.innerHTML = "";
-
-coldStorageData.features.forEach(function(f){
-
-var p = f.properties || {};
-
-var district =
-p.District ||
-p.district ||
-p.DISTRICT ||
-p.dist_name ||
-"N/A";
-
-var name =
-p.Name ||
-p.name ||
-p.NAME ||
-p.storage_name ||
-p.Storage_Name ||
-p.cold_storage ||
-p.ColdStorage ||
-p.cold_name ||
-"Cold Storage";
-
-var capacity =
-p.Capacity ||
-p.capacity ||
-p.CAPACITY ||
-p.Capacity_MT ||
-p.capacity_mt ||
-p.Storage_Capacity ||
-p.storage_capacity ||
-p.cap_mt ||
-p.cap ||
-"N/A";
-
-var lat = f.geometry.coordinates[1];
-var lon = f.geometry.coordinates[0];
-
-var distance = "N/A";
-
-if(window.selectedRailway){
-
-distance = calculateDistance(
-lat,
-lon,
-window.selectedRailway.lat,
-window.selectedRailway.lon
-) + " KM";
-
-}
-
-tbody.innerHTML +=
-
-"<tr>" +
-
-"<td>" + district + "</td>" +
-
-"<td>" + name + "</td>" +
-
-"<td>" + capacity + "</td>" +
-
-"<td>" + distance + "</td>" +
-
-"<td>" + lat + "</td>" +
-
-"<td>" + lon + "</td>" +
-
-"</tr>";
 
 });
 
 }
 
-updateTable();
+var ctx =
+document.getElementById('districtChart');
 
-// =======================================================
-// CHART
-// =======================================================
-
-var districtData = {{ district_counts|safe }};
-
-var labels = Object.keys(districtData);
-var values = Object.values(districtData);
-
-new Chart(document.getElementById("districtChart"),{
-
+new Chart(ctx,{
 type:'bar',
-
 data:{
-labels:labels,
+labels: {{district_labels|safe}},
 datasets:[{
 label:'Cold Storages',
-data:values,
+data: {{district_values|safe}},
 backgroundColor:'#1565c0'
 }]
-},
-
-options:{
-responsive:true,
-maintainAspectRatio:false,
-plugins:{
-legend:{
-display:false
 }
-}
-}
-
 });
-
-// =======================================================
-// LEGEND
-// =======================================================
-
-var legend = L.control({position:'bottomright'});
-
-legend.onAdd = function(){
-
-var div = L.DomUtil.create('div','legend');
-
-div.innerHTML =
-
-'<b>Legend</b><br>' +
-
-'<span style="background:blue"></span> Cold Storage<br>' +
-
-'<span style="background:red"></span> Railway Station<br>' +
-
-'<span style="background:green"></span> Airport<br>' +
-
-'<span style="background:orange"></span> Mandi';
-
-return div;
-
-};
-
-legend.addTo(map);
 
 </script>
 
 </body>
-
 </html>
 
 """
 
 # =========================================================
-# ROUTE
+# TABLE DATA
+# =========================================================
+
+table_data = []
+
+for feature in cold_storage.get("features", [])[:50]:
+
+    props = feature.get("properties", {})
+
+    coords = feature.get("geometry", {}).get("coordinates", [0,0])
+
+    lon = coords[0]
+    lat = coords[1]
+
+    table_data.append({
+        "district": props.get("district", "N/A"),
+        "name": props.get("name", "Cold Storage"),
+        "capacity": props.get("capacity", "N/A"),
+        "distance": "N/A",
+        "lat": lat,
+        "lon": lon
+    })
+
+# =========================================================
+# HOME ROUTE
 # =========================================================
 
 @app.route("/")
 
 def home():
 
+    station_names = []
+
+    for feature in railway_station.get("features", []):
+
+        props = feature.get("properties", {})
+
+        name = props.get("name")
+
+        if name:
+            station_names.append(name)
+
     return render_template_string(
 
         HTML,
 
-        cold_count=cold_count,
-        rail_count=rail_count,
-        airport_count=airport_count,
-        mandi_count=mandi_count,
+        cold_count=len(cold_storage.get("features", [])),
+        rail_count=len(railway_station.get("features", [])),
+        airport_count=len(airport.get("features", [])),
+        mandi_count=len(mandis.get("features", [])),
 
-        district_counts=json.dumps(district_counts),
+        station_names=station_names,
 
-        bihar_boundary=json.dumps(bihar_boundary),
+        district_labels=district_labels,
+        district_values=district_values,
+
+        table_data=table_data,
+
         cold_storage=json.dumps(cold_storage),
         railway_station=json.dumps(railway_station),
         airport=json.dumps(airport),
         mandis=json.dumps(mandis),
-
-        railway_list=json.dumps(railway_list)
+        bihar_boundary=json.dumps(bihar_boundary)
 
     )
 
 # =========================================================
-# RUN APP
+# MAIN
 # =========================================================
 
 if __name__ == "__main__":
-
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=True
-    )
+    app.run(host="0.0.0.0", port=5000)
