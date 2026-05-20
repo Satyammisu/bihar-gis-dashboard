@@ -1,33 +1,23 @@
 from flask import Flask, render_template_string
 import json
 import os
-from math import radians, cos, sin, asin, sqrt
+import math
 
 app = Flask(__name__)
-
-# =========================================================
-# BASE DIRECTORY
-# =========================================================
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = BASE_DIR
 
 # =========================================================
 # LOAD GEOJSON
 # =========================================================
 
 def load_geojson(filename):
-    filepath = os.path.join(DATA_DIR, filename)
+    path = os.path.join(os.path.dirname(__file__), filename)
 
-    if os.path.exists(filepath):
-        with open(filepath, "r", encoding="utf-8") as f:
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
     return {"type": "FeatureCollection", "features": []}
 
-# =========================================================
-# LOAD DATA
-# =========================================================
 
 cold_storage = load_geojson("cold_storage.geojson")
 railway_station = load_geojson("railway_station.geojson")
@@ -35,44 +25,132 @@ airport = load_geojson("airport.geojson")
 mandis = load_geojson("mandis.geojson")
 bihar_boundary = load_geojson("bihar_boundary.geojson")
 
+
 # =========================================================
 # HAVERSINE DISTANCE
 # =========================================================
 
 def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
 
-    lon1, lat1, lon2, lat2 = map(
-        radians,
-        [lon1, lat1, lon2, lat2]
+    dLat = math.radians(lat2 - lat1)
+    dLon = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(dLat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dLon / 2) ** 2
     )
 
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    return round(R * c, 2)
 
-    c = 2 * asin(sqrt(a))
-
-    r = 6371
-
-    return round(c * r, 2)
 
 # =========================================================
-# DISTRICT SUMMARY
+# FIELD EXTRACTION
 # =========================================================
+
+def get_field(props, possible_fields):
+
+    for field in possible_fields:
+        if field in props and props[field] not in [None, "", "NULL"]:
+            return props[field]
+
+    return "N/A"
+
+
+# =========================================================
+# PREPARE COLD STORAGE TABLE
+# =========================================================
+
+cold_storage_table = []
 
 district_counts = {}
 
-for feature in cold_storage.get("features", []):
+for feature in cold_storage["features"]:
 
     props = feature.get("properties", {})
+    coords = feature.get("geometry", {}).get("coordinates", [0, 0])
 
-    district = props.get("district", "Unknown")
+    lon = coords[0]
+    lat = coords[1]
+
+    district = get_field(props, [
+        "district",
+        "District",
+        "DISTRICT",
+        "district_name"
+    ])
+
+    name = get_field(props, [
+        "name",
+        "Name",
+        "cold_storage",
+        "Cold_Storage",
+        "storage_name"
+    ])
+
+    capacity = get_field(props, [
+        "capacity",
+        "Capacity",
+        "CAPACITY",
+        "capacity_mt"
+    ])
+
+    nearest_distance = "N/A"
+
+    if railway_station["features"]:
+
+        min_distance = 999999
+
+        for rs in railway_station["features"]:
+
+            rs_coords = rs.get("geometry", {}).get("coordinates", [0, 0])
+
+            rs_lon = rs_coords[0]
+            rs_lat = rs_coords[1]
+
+            distance = haversine(lat, lon, rs_lat, rs_lon)
+
+            if distance < min_distance:
+                min_distance = distance
+
+        nearest_distance = round(min_distance, 2)
+
+    cold_storage_table.append({
+        "district": district,
+        "name": name,
+        "capacity": capacity,
+        "distance": nearest_distance,
+        "lat": lat,
+        "lon": lon
+    })
 
     district_counts[district] = district_counts.get(district, 0) + 1
 
-district_labels = list(district_counts.keys())
-district_values = list(district_counts.values())
+
+# =========================================================
+# RAILWAY DROPDOWN
+# =========================================================
+
+railway_dropdown = []
+
+for feature in railway_station["features"]:
+
+    props = feature.get("properties", {})
+
+    station_name = get_field(props, [
+        "name",
+        "Name",
+        "station",
+        "Station",
+        "station_name"
+    ])
+
+    railway_dropdown.append(station_name)
+
 
 # =========================================================
 # HTML TEMPLATE
@@ -89,8 +167,6 @@ HTML = """
 
 <meta charset="utf-8"/>
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <link rel="stylesheet"
 href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -104,7 +180,7 @@ body{
 margin:0;
 padding:0;
 font-family:Arial;
-background:#f4f7fb;
+background:#f4f4f4;
 }
 
 .container{
@@ -113,14 +189,14 @@ height:100vh;
 }
 
 .sidebar{
-width:30%;
+width:35%;
 overflow-y:auto;
-padding:15px;
+padding:20px;
 background:white;
 }
 
 .map-container{
-width:70%;
+width:65%;
 }
 
 #map{
@@ -130,81 +206,64 @@ width:100%;
 
 .card{
 background:white;
-padding:15px;
+padding:20px;
+margin-bottom:20px;
 border-radius:10px;
-margin-bottom:15px;
-box-shadow:0px 2px 5px rgba(0,0,0,0.1);
+box-shadow:0 2px 10px rgba(0,0,0,0.1);
 }
 
-h1{
-background:#0b4dbb;
+.title{
+background:#0d47a1;
 color:white;
 padding:20px;
 border-radius:10px;
 font-size:36px;
+font-weight:bold;
+margin-bottom:20px;
 }
 
 .summary-box{
-background:linear-gradient(to right,#0b4dbb,#1f78ff);
-padding:15px;
+background:linear-gradient(to right,#1565c0,#1e88e5);
 color:white;
-border-radius:10px;
+padding:15px;
 margin-bottom:10px;
-font-size:24px;
+border-radius:8px;
+font-size:22px;
 font-weight:bold;
 }
 
 select,button{
 width:100%;
-padding:12px;
+padding:14px;
 margin-top:10px;
-font-size:16px;
-border-radius:6px;
+border-radius:8px;
 border:1px solid #ccc;
+font-size:18px;
 }
 
 button{
 background:#1565c0;
 color:white;
 border:none;
-cursor:pointer;
 font-weight:bold;
-}
-
-button:hover{
-background:#0d47a1;
+cursor:pointer;
 }
 
 table{
 width:100%;
 border-collapse:collapse;
-font-size:12px;
+font-size:14px;
 }
 
-table th{
-background:#0b4dbb;
+th{
+background:#0d47a1;
 color:white;
-padding:8px;
-}
-
-table td{
-padding:8px;
-border:1px solid #ddd;
-}
-
-.legend{
-background:white;
 padding:10px;
-line-height:25px;
-color:#333;
 }
 
-.legend i{
-width:18px;
-height:18px;
-float:left;
-margin-right:8px;
-opacity:0.9;
+td{
+padding:8px;
+border:1px solid #ccc;
 }
 
 </style>
@@ -217,26 +276,28 @@ opacity:0.9;
 
 <div class="sidebar">
 
-<h1>Bihar GIS Dashboard</h1>
+<div class="title">
+Bihar GIS Dashboard
+</div>
 
 <div class="card">
 
 <h2>Summary</h2>
 
 <div class="summary-box">
-Cold Storages: {{cold_count}}
+Cold Storages: {{ cold_count }}
 </div>
 
 <div class="summary-box">
-Railway Stations: {{rail_count}}
+Railway Stations: {{ railway_count }}
 </div>
 
 <div class="summary-box">
-Airports: {{airport_count}}
+Airports: {{ airport_count }}
 </div>
 
 <div class="summary-box">
-Mandis: {{mandi_count}}
+Mandis: {{ mandi_count }}
 </div>
 
 </div>
@@ -245,31 +306,23 @@ Mandis: {{mandi_count}}
 
 <h2>Railway Station Buffer</h2>
 
-<select id="stationSelect">
+<select>
 
-<option value="">Select Railway Station</option>
+{% for station in railway_dropdown %}
 
-{% for station in station_names %}
-
-<option value="{{station}}">
-{{station}}
-</option>
+<option>{{ station }}</option>
 
 {% endfor %}
 
 </select>
 
-<select id="bufferDistance">
-
-<option value="5">5 KM</option>
-<option value="10">10 KM</option>
-<option value="20">20 KM</option>
-
+<select>
+<option>5 KM</option>
+<option>10 KM</option>
+<option>20 KM</option>
 </select>
 
-<button onclick="generateBuffer()">
-Generate Buffer
-</button>
+<button>Generate Buffer</button>
 
 </div>
 
@@ -277,7 +330,7 @@ Generate Buffer
 
 <h2>District Wise Cold Storages</h2>
 
-<canvas id="districtChart"></canvas>
+<canvas id="chart"></canvas>
 
 </div>
 
@@ -296,16 +349,16 @@ Generate Buffer
 <th>Longitude</th>
 </tr>
 
-{% for row in table_data %}
+{% for row in cold_storage_table %}
 
 <tr>
 
-<td>{{row.district}}</td>
-<td>{{row.name}}</td>
-<td>{{row.capacity}}</td>
-<td>{{row.distance}}</td>
-<td>{{row.lat}}</td>
-<td>{{row.lon}}</td>
+<td>{{ row.district }}</td>
+<td>{{ row.name }}</td>
+<td>{{ row.capacity }}</td>
+<td>{{ row.distance }}</td>
+<td>{{ row.lat }}</td>
+<td>{{ row.lon }}</td>
 
 </tr>
 
@@ -318,9 +371,7 @@ Generate Buffer
 </div>
 
 <div class="map-container">
-
 <div id="map"></div>
-
 </div>
 
 </div>
@@ -330,34 +381,29 @@ Generate Buffer
 var map = L.map('map').setView([25.6,85.1],7);
 
 L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-{
-maxZoom:19
-}
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 ).addTo(map);
 
-var coldData = {{cold_storage|safe}};
-var railData = {{railway_station|safe}};
-var airportData = {{airport|safe}};
-var mandiData = {{mandis|safe}};
-var boundaryData = {{bihar_boundary|safe}};
+var boundary = {{ boundary|safe }};
 
-L.geoJSON(boundaryData,{
+L.geoJSON(boundary,{
 style:{
-color:'black',
-weight:2,
-fillOpacity:0
+color:"black",
+weight:3,
+fill:false
 }
 }).addTo(map);
 
-var coldLayer = L.geoJSON(coldData,{
+var cold = {{ cold_storage|safe }};
+
+L.geoJSON(cold,{
 
 pointToLayer:function(feature,latlng){
 
 return L.circleMarker(latlng,{
 radius:6,
-fillColor:'red',
-color:'white',
+fillColor:"red",
+color:"white",
 weight:1,
 fillOpacity:1
 });
@@ -366,26 +412,27 @@ fillOpacity:1
 
 onEachFeature:function(feature,layer){
 
-var p = feature.properties;
+var props = feature.properties;
 
 layer.bindPopup(
-"<b>Cold Storage</b><br>"+
-"District: "+(p.district || 'N/A')+"<br>"+
-"Capacity: "+(p.capacity || 'N/A')
+"<b>Cold Storage</b><br>" +
+JSON.stringify(props)
 );
 
 }
 
 }).addTo(map);
 
-var railLayer = L.geoJSON(railData,{
+var railway = {{ railway_station|safe }};
+
+L.geoJSON(railway,{
 
 pointToLayer:function(feature,latlng){
 
 return L.circleMarker(latlng,{
 radius:6,
-fillColor:'blue',
-color:'white',
+fillColor:"blue",
+color:"white",
 weight:1,
 fillOpacity:1
 });
@@ -394,24 +441,24 @@ fillOpacity:1
 
 onEachFeature:function(feature,layer){
 
-var p = feature.properties;
-
 layer.bindPopup(
-"<b>Railway Station</b><br>"+
-(p.name || 'N/A')
+"<b>Railway Station</b><br>" +
+JSON.stringify(feature.properties)
 );
 
 }
 
 }).addTo(map);
 
-var airportLayer = L.geoJSON(airportData,{
+var airport = {{ airport|safe }};
+
+L.geoJSON(airport,{
 pointToLayer:function(feature,latlng){
 
 return L.circleMarker(latlng,{
 radius:6,
-fillColor:'green',
-color:'white',
+fillColor:"green",
+color:"white",
 weight:1,
 fillOpacity:1
 });
@@ -419,13 +466,15 @@ fillOpacity:1
 }
 }).addTo(map);
 
-var mandiLayer = L.geoJSON(mandiData,{
+var mandi = {{ mandis|safe }};
+
+L.geoJSON(mandi,{
 pointToLayer:function(feature,latlng){
 
 return L.circleMarker(latlng,{
 radius:6,
-fillColor:'orange',
-color:'white',
+fillColor:"orange",
+color:"white",
 weight:1,
 fillOpacity:1
 });
@@ -433,52 +482,20 @@ fillOpacity:1
 }
 }).addTo(map);
 
-function generateBuffer(){
-
-var stationName =
-document.getElementById("stationSelect").value;
-
-var distance =
-document.getElementById("bufferDistance").value;
-
-railData.features.forEach(function(feature){
-
-if(feature.properties.name == stationName){
-
-var lat =
-feature.geometry.coordinates[1];
-
-var lon =
-feature.geometry.coordinates[0];
-
-L.circle([lat,lon],{
-radius:distance*1000,
-color:'green',
-fillOpacity:0.1
-}).addTo(map);
-
-map.setView([lat,lon],10);
-
-}
-
-});
-
-}
-
-var ctx =
-document.getElementById('districtChart');
-
-new Chart(ctx,{
-type:'bar',
+var chart = new Chart(
+document.getElementById("chart"),
+{
+type:"bar",
 data:{
-labels: {{district_labels|safe}},
+labels: {{ district_labels|safe }},
 datasets:[{
-label:'Cold Storages',
-data: {{district_values|safe}},
-backgroundColor:'#1565c0'
+label:"Cold Storages",
+data: {{ district_values|safe }},
+backgroundColor:"#42a5f5"
 }]
 }
-});
+}
+);
 
 </script>
 
@@ -487,76 +504,45 @@ backgroundColor:'#1565c0'
 
 """
 
-# =========================================================
-# TABLE DATA
-# =========================================================
-
-table_data = []
-
-for feature in cold_storage.get("features", [])[:50]:
-
-    props = feature.get("properties", {})
-
-    coords = feature.get("geometry", {}).get("coordinates", [0,0])
-
-    lon = coords[0]
-    lat = coords[1]
-
-    table_data.append({
-        "district": props.get("district", "N/A"),
-        "name": props.get("name", "Cold Storage"),
-        "capacity": props.get("capacity", "N/A"),
-        "distance": "N/A",
-        "lat": lat,
-        "lon": lon
-    })
 
 # =========================================================
-# HOME ROUTE
+# ROUTE
 # =========================================================
 
 @app.route("/")
 
 def home():
 
-    station_names = []
-
-    for feature in railway_station.get("features", []):
-
-        props = feature.get("properties", {})
-
-        name = props.get("name")
-
-        if name:
-            station_names.append(name)
-
     return render_template_string(
 
         HTML,
 
-        cold_count=len(cold_storage.get("features", [])),
-        rail_count=len(railway_station.get("features", [])),
-        airport_count=len(airport.get("features", [])),
-        mandi_count=len(mandis.get("features", [])),
-
-        station_names=station_names,
-
-        district_labels=district_labels,
-        district_values=district_values,
-
-        table_data=table_data,
+        cold_count=len(cold_storage["features"]),
+        railway_count=len(railway_station["features"]),
+        airport_count=len(airport["features"]),
+        mandi_count=len(mandis["features"]),
 
         cold_storage=json.dumps(cold_storage),
         railway_station=json.dumps(railway_station),
         airport=json.dumps(airport),
         mandis=json.dumps(mandis),
-        bihar_boundary=json.dumps(bihar_boundary)
+        boundary=json.dumps(bihar_boundary),
 
+        cold_storage_table=cold_storage_table,
+
+        railway_dropdown=railway_dropdown,
+
+        district_labels=json.dumps(list(district_counts.keys())),
+        district_values=json.dumps(list(district_counts.values()))
     )
+
 
 # =========================================================
 # MAIN
 # =========================================================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+
+    port = int(os.environ.get("PORT", 5000))
+
+    app.run(host="0.0.0.0", port=port)
