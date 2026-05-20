@@ -1,0 +1,22 @@
+{
+"type": "FeatureCollection",
+"name": "mandis",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "Name": "Musallahpur Mandi", "District": "Patna", "Latitude": 25.617, "Longitude": 85.145 }, "geometry": { "type": "Point", "coordinates": [ 85.145, 25.617 ] } },
+{ "type": "Feature", "properties": { "Name": "Muzaffarpur Agriculture Market", "District": "Muzaffarpur", "Latitude": 26.1209, "Longitude": 85.3647 }, "geometry": { "type": "Point", "coordinates": [ 85.3647, 26.1209 ] } },
+{ "type": "Feature", "properties": { "Name": "Purnea Mandi", "District": "Purnea", "Latitude": 25.7771, "Longitude": 87.4753 }, "geometry": { "type": "Point", "coordinates": [ 87.4753, 25.7771 ] } },
+{ "type": "Feature", "properties": { "Name": "Bhagalpur Mandi", "District": "Bhagalpur", "Latitude": 25.2425, "Longitude": 86.9842 }, "geometry": { "type": "Point", "coordinates": [ 86.9842, 25.2425 ] } },
+{ "type": "Feature", "properties": { "Name": "Gaya Grain Market", "District": "Gaya", "Latitude": 24.7914, "Longitude": 85.0002 }, "geometry": { "type": "Point", "coordinates": [ 85.0002, 24.7914 ] } },
+{ "type": "Feature", "properties": { "Name": "Darbhanga Mandi", "District": "Darbhanga", "Latitude": 26.1542, "Longitude": 85.8918 }, "geometry": { "type": "Point", "coordinates": [ 85.8918, 26.1542 ] } },
+{ "type": "Feature", "properties": { "Name": "Ara Mandi", "District": "Bhojpur", "Latitude": 25.556, "Longitude": 84.6633 }, "geometry": { "type": "Point", "coordinates": [ 84.6633, 25.556 ] } },
+{ "type": "Feature", "properties": { "Name": "Begusarai Mandi", "District": "Begusarai", "Latitude": 25.4182, "Longitude": 86.1272 }, "geometry": { "type": "Point", "coordinates": [ 86.1272, 25.4182 ] } },
+{ "type": "Feature", "properties": { "Name": "Katihar Mandi", "District": "Katihar", "Latitude": 25.538, "Longitude": 87.57 }, "geometry": { "type": "Point", "coordinates": [ 87.57, 25.538 ] } },
+{ "type": "Feature", "properties": { "Name": "Kishanganj Mandi", "District": "Kishanganj", "Latitude": 26.1022, "Longitude": 87.9525 }, "geometry": { "type": "Point", "coordinates": [ 87.9525, 26.1022 ] } },
+{ "type": "Feature", "properties": { "Name": "Saharsa Mandi", "District": "Saharsa", "Latitude": 25.877, "Longitude": 86.596 }, "geometry": { "type": "Point", "coordinates": [ 86.596, 25.877 ] } },
+{ "type": "Feature", "properties": { "Name": "Sitamarhi Mandi", "District": "Sitamarhi", "Latitude": 26.5887, "Longitude": 85.5013 }, "geometry": { "type": "Point", "coordinates": [ 85.5013, 26.5887 ] } },
+{ "type": "Feature", "properties": { "Name": "Motihari Mandi", "District": "East Champaran", "Latitude": 26.6486, "Longitude": 84.9166 }, "geometry": { "type": "Point", "coordinates": [ 84.9166, 26.6486 ] } },
+{ "type": "Feature", "properties": { "Name": "Chapra Mandi", "District": "Saran", "Latitude": 25.7796, "Longitude": 84.7499 }, "geometry": { "type": "Point", "coordinates": [ 84.7499, 25.7796 ] } },
+{ "type": "Feature", "properties": { "Name": "Samastipur Mandi", "District": "Samastipur", "Latitude": 25.8629, "Longitude": 85.781 }, "geometry": { "type": "Point", "coordinates": [ 85.781, 25.8629 ] } }
+]
+}

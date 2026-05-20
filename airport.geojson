@@ -1,0 +1,10 @@
+{
+"type": "FeatureCollection",
+"name": "airport",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "Name": "Jay Prakash Narayan International Airport", "District": "Patna", "Latitude": 25.5913, "Longitude": 85.087 }, "geometry": { "type": "Point", "coordinates": [ 85.087, 25.5913 ] } },
+{ "type": "Feature", "properties": { "Name": "Darbhanga Airport", "District": "Darbhanga", "Latitude": 26.193, "Longitude": 85.917 }, "geometry": { "type": "Point", "coordinates": [ 85.917, 26.193 ] } },
+{ "type": "Feature", "properties": { "Name": "Purnea Airport", "District": "Purnea", "Latitude": 25.7771, "Longitude": 87.4753 }, "geometry": { "type": "Point", "coordinates": [ 87.4753, 25.7771 ] } }
+]
+}
