@@ -1,210 +1,214 @@
-import pandas as pd
-import json
-from math import radians, cos, sin, sqrt, atan2
+# ============================================
+# BIHAR GIS DASHBOARD - FINAL FULL app.py
+# ============================================
 
+import pandas as pd
+import dash
 from dash import Dash, dcc, html, dash_table, Input, Output
 import plotly.express as px
-import dash_leaflet as dl
+import plotly.graph_objects as go
+import os
 
 # ============================================
-# CREATE DASH APP
+# INITIALIZE DASH APP
 # ============================================
 
 app = Dash(__name__)
 server = app.server
 
 # ============================================
-# LOAD BIHAR BOUNDARY
-# ============================================
-
-with open("bihar_boundary.geojson", "r", encoding="utf-8") as f:
-    bihar_boundary = json.load(f)
-
-# ============================================
 # LOAD CSV FILES
 # ============================================
 
-cold_df = pd.read_csv("cold_storage.csv")
-rail_df = pd.read_csv("railway_stations.csv")
-airport_df = pd.read_csv("airport.csv")
-mandi_df = pd.read_csv("mandis.csv")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+cold_storage_file = os.path.join(BASE_DIR, "cold_storage.csv")
+railway_file = os.path.join(BASE_DIR, "railway_stations.csv")
+airport_file = os.path.join(BASE_DIR, "airport.csv")
+mandi_file = os.path.join(BASE_DIR, "mandis.csv")
+
+# ============================================
+# READ CSV FILES
+# ============================================
+
+cold_df = pd.read_csv(cold_storage_file)
+rail_df = pd.read_csv(railway_file)
+airport_df = pd.read_csv(airport_file)
+mandi_df = pd.read_csv(mandi_file)
+
+# ============================================
+# CLEAN COLUMN NAMES
+# ============================================
+
+cold_df.columns = cold_df.columns.str.strip().str.lower()
+rail_df.columns = rail_df.columns.str.strip().str.lower()
+airport_df.columns = airport_df.columns.str.strip().str.lower()
+mandi_df.columns = mandi_df.columns.str.strip().str.lower()
 
 # ============================================
 # RENAME COLUMNS
 # ============================================
 
 cold_df.rename(columns={
-    'Cold Storage_Name': 'Name',
-    'Capacity and UOM': 'Capacity'
+    "name": "Name",
+    "district": "District",
+    "latitude": "Latitude",
+    "longitude": "Longitude"
+}, inplace=True)
+
+rail_df.rename(columns={
+    "station_name": "Name",
+    "name": "Name",
+    "district": "District",
+    "latitude": "Latitude",
+    "longitude": "Longitude"
+}, inplace=True)
+
+airport_df.rename(columns={
+    "airport_name": "Name",
+    "name": "Name",
+    "district": "District",
+    "latitude": "Latitude",
+    "longitude": "Longitude"
+}, inplace=True)
+
+mandi_df.rename(columns={
+    "mandi_name": "Name",
+    "name": "Name",
+    "district": "District",
+    "latitude": "Latitude",
+    "longitude": "Longitude"
 }, inplace=True)
 
 # ============================================
-# SAFE COLUMN HANDLING - COLD STORAGE
+# HANDLE MISSING COLUMNS
 # ============================================
 
-if 'Name' not in cold_df.columns:
-    cold_df['Name'] = 'Cold Storage'
-else:
-    cold_df['Name'] = cold_df['Name'].fillna('Cold Storage')
+required_cols = ["Name", "District", "Latitude", "Longitude"]
 
-if 'District' not in cold_df.columns:
-    cold_df['District'] = 'Unknown'
-else:
-    cold_df['District'] = cold_df['District'].fillna('Unknown')
-
-if 'Capacity' not in cold_df.columns:
-    cold_df['Capacity'] = 'N/A'
-else:
-    cold_df['Capacity'] = cold_df['Capacity'].fillna('N/A')
-
-if 'Latitude' not in cold_df.columns:
-    cold_df['Latitude'] = 0
-
-if 'Longitude' not in cold_df.columns:
-    cold_df['Longitude'] = 0
+for df in [cold_df, rail_df, airport_df, mandi_df]:
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = None
 
 # ============================================
-# SAFE COLUMN HANDLING - RAILWAY
+# REMOVE NULL LAT LONG
 # ============================================
 
-rail_df.columns = rail_df.columns.str.strip()
-
-if 'Station' not in rail_df.columns:
-    if len(rail_df.columns) > 0:
-        rail_df.rename(columns={rail_df.columns[0]: 'Station'}, inplace=True)
-    else:
-        rail_df['Station'] = 'Unknown Station'
-
-if 'Latitude' not in rail_df.columns:
-    rail_df['Latitude'] = 0
-
-if 'Longitude' not in rail_df.columns:
-    rail_df['Longitude'] = 0
-
-rail_df['Station'] = rail_df['Station'].fillna('Unknown Station')
+cold_df = cold_df.dropna(subset=["Latitude", "Longitude"])
+rail_df = rail_df.dropna(subset=["Latitude", "Longitude"])
+airport_df = airport_df.dropna(subset=["Latitude", "Longitude"])
+mandi_df = mandi_df.dropna(subset=["Latitude", "Longitude"])
 
 # ============================================
-# SAFE COLUMN HANDLING - AIRPORT
+# CONVERT LAT LONG TO NUMERIC
 # ============================================
 
-airport_df.columns = airport_df.columns.str.strip()
-
-if 'Name' not in airport_df.columns:
-    if len(airport_df.columns) > 0:
-        airport_df.rename(columns={airport_df.columns[0]: 'Name'}, inplace=True)
-    else:
-        airport_df['Name'] = 'Airport'
-
-if 'Latitude' not in airport_df.columns:
-    airport_df['Latitude'] = 0
-
-if 'Longitude' not in airport_df.columns:
-    airport_df['Longitude'] = 0
-
-airport_df['Name'] = airport_df['Name'].fillna('Airport')
+for df in [cold_df, rail_df, airport_df, mandi_df]:
+    df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
+    df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
 
 # ============================================
-# SAFE COLUMN HANDLING - MANDI
+# REMOVE INVALID COORDINATES
 # ============================================
 
-mandi_df.columns = mandi_df.columns.str.strip()
-
-if 'Name' not in mandi_df.columns:
-    if len(mandi_df.columns) > 0:
-        mandi_df.rename(columns={mandi_df.columns[0]: 'Name'}, inplace=True)
-    else:
-        mandi_df['Name'] = 'Mandi'
-
-if 'Latitude' not in mandi_df.columns:
-    mandi_df['Latitude'] = 0
-
-if 'Longitude' not in mandi_df.columns:
-    mandi_df['Longitude'] = 0
-
-mandi_df['Name'] = mandi_df['Name'].fillna('Mandi')
+cold_df = cold_df.dropna(subset=["Latitude", "Longitude"])
+rail_df = rail_df.dropna(subset=["Latitude", "Longitude"])
+airport_df = airport_df.dropna(subset=["Latitude", "Longitude"])
+mandi_df = mandi_df.dropna(subset=["Latitude", "Longitude"])
 
 # ============================================
-# DISTRICT WISE CHART
+# CREATE MAP
 # ============================================
 
-district_count = cold_df.groupby("District").size().reset_index(name="Cold Storages")
+fig = go.Figure()
 
-fig = px.bar(
-    district_count,
+# ============================================
+# ADD COLD STORAGE MARKERS
+# ============================================
+
+fig.add_trace(go.Scattermapbox(
+    lat=cold_df["Latitude"],
+    lon=cold_df["Longitude"],
+    mode='markers',
+    marker=go.scattermapbox.Marker(
+        size=10,
+        color='blue'
+    ),
+    text=cold_df["Name"],
+    name="Cold Storage"
+))
+
+# ============================================
+# ADD RAILWAY STATION MARKERS
+# ============================================
+
+fig.add_trace(go.Scattermapbox(
+    lat=rail_df["Latitude"],
+    lon=rail_df["Longitude"],
+    mode='markers',
+    marker=go.scattermapbox.Marker(
+        size=10,
+        color='red'
+    ),
+    text=rail_df["Name"],
+    name="Railway Stations"
+))
+
+# ============================================
+# ADD AIRPORT MARKERS
+# ============================================
+
+fig.add_trace(go.Scattermapbox(
+    lat=airport_df["Latitude"],
+    lon=airport_df["Longitude"],
+    mode='markers',
+    marker=go.scattermapbox.Marker(
+        size=10,
+        color='green'
+    ),
+    text=airport_df["Name"],
+    name="Airports"
+))
+
+# ============================================
+# ADD MANDI MARKERS
+# ============================================
+
+fig.add_trace(go.Scattermapbox(
+    lat=mandi_df["Latitude"],
+    lon=mandi_df["Longitude"],
+    mode='markers',
+    marker=go.scattermapbox.Marker(
+        size=10,
+        color='orange'
+    ),
+    text=mandi_df["Name"],
+    name="Mandis"
+))
+
+# ============================================
+# MAP LAYOUT
+# ============================================
+
+fig.update_layout(
+    mapbox_style="open-street-map",
+    mapbox_zoom=5,
+    mapbox_center={"lat": 25.5, "lon": 85.3},
+    margin={"r":0,"t":0,"l":0,"b":0},
+    height=700
+)
+
+# ============================================
+# DISTRICT WISE COLD STORAGE CHART
+# ============================================
+
+district_chart = px.bar(
+    cold_df.groupby("District").size().reset_index(name="Cold Storages"),
     x="District",
     y="Cold Storages",
     title="District Wise Cold Storages"
 )
-
-# ============================================
-# HAVERSINE DISTANCE FUNCTION
-# ============================================
-
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
-
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-
-    a = sin(dlat / 2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2)**2
-
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
-
-    return R * c
-
-# ============================================
-# MAP MARKERS
-# ============================================
-
-cold_markers = [
-    dl.CircleMarker(
-        center=[row["Latitude"], row["Longitude"]],
-        radius=6,
-        color="blue",
-        children=[
-            dl.Tooltip(
-                f"{row['Name']} | {row['District']}"
-            )
-        ]
-    )
-    for _, row in cold_df.iterrows()
-]
-
-rail_markers = [
-    dl.CircleMarker(
-        center=[row["Latitude"], row["Longitude"]],
-        radius=6,
-        color="red",
-        children=[
-            dl.Tooltip(row["Station"])
-        ]
-    )
-    for _, row in rail_df.iterrows()
-]
-
-airport_markers = [
-    dl.CircleMarker(
-        center=[row["Latitude"], row["Longitude"]],
-        radius=8,
-        color="green",
-        children=[
-            dl.Tooltip(row["Name"])
-        ]
-    )
-    for _, row in airport_df.iterrows()
-]
-
-mandi_markers = [
-    dl.CircleMarker(
-        center=[row["Latitude"], row["Longitude"]],
-        radius=5,
-        color="orange",
-        children=[
-            dl.Tooltip(row["Name"])
-        ]
-    )
-    for _, row in mandi_df.iterrows()
-]
 
 # ============================================
 # APP LAYOUT
@@ -216,48 +220,33 @@ app.layout = html.Div([
         "Bihar GIS Dashboard",
         style={
             "textAlign": "center",
-            "color": "darkblue"
+            "marginBottom": "20px"
         }
     ),
 
     html.Div([
 
         html.Div([
-            html.H2(f"Cold Storages: {len(cold_df)}"),
-            html.H2(f"Railway Stations: {len(rail_df)}"),
-            html.H2(f"Airports: {len(airport_df)}"),
-            html.H2(f"Mandis: {len(mandi_df)}")
-        ],
-        style={
-            "width": "30%",
-            "display": "inline-block",
-            "verticalAlign": "top",
-            "padding": "10px"
-        }),
-
-        html.Div([
 
             html.H2("Railway Station Buffer"),
 
             dcc.Dropdown(
-                id="rail-dropdown",
+                id='rail-dropdown',
                 options=[
-                    {
-                        "label": row["Station"],
-                        "value": row["Station"]
-                    }
-                    for _, row in rail_df.iterrows()
+                    {"label": i, "value": i}
+                    for i in rail_df["Name"].dropna().unique()
                 ],
                 placeholder="Select Railway Station"
             ),
 
+            html.Br(),
+
             dcc.Dropdown(
-                id="buffer-dropdown",
+                id='buffer-distance',
                 options=[
                     {"label": "5 KM", "value": 5},
                     {"label": "10 KM", "value": 10},
-                    {"label": "20 KM", "value": 20},
-                    {"label": "50 KM", "value": 50}
+                    {"label": "20 KM", "value": 20}
                 ],
                 value=5
             ),
@@ -266,90 +255,45 @@ app.layout = html.Div([
 
             html.Button(
                 "Generate Buffer",
-                id="buffer-btn",
+                id='buffer-btn',
                 n_clicks=0,
                 style={
-                    "backgroundColor": "blue",
+                    "backgroundColor": "#007BFF",
                     "color": "white",
-                    "padding": "10px",
-                    "border": "none"
+                    "border": "none",
+                    "padding": "12px",
+                    "width": "100%",
+                    "borderRadius": "5px",
+                    "fontWeight": "bold"
                 }
             ),
 
             html.Br(),
             html.Br(),
 
-            dcc.Graph(figure=fig),
-
-            html.H2("Cold Storage Details"),
-
-            dash_table.DataTable(
-                id="cold-table",
-                columns=[
-                    {"name": i, "id": i}
-                    for i in cold_df.columns
-                ],
-                data=cold_df.to_dict("records"),
-                page_size=10,
-                style_table={"overflowX": "auto"},
-                style_cell={
-                    "textAlign": "left",
-                    "padding": "5px"
-                },
-                style_header={
-                    "backgroundColor": "darkblue",
-                    "color": "white",
-                    "fontWeight": "bold"
-                }
-            )
-
-        ],
-        style={
-            "width": "35%",
-            "display": "inline-block",
-            "verticalAlign": "top",
-            "padding": "10px"
-        }),
-
-        html.Div([
-
-            dl.Map(
-                center=[25.6, 85.1],
-                zoom=7,
-                children=[
-
-                    dl.TileLayer(),
-
-                    dl.GeoJSON(
-                        data=bihar_boundary,
-                        options={
-                            "style": {
-                                "color": "black",
-                                "weight": 2,
-                                "fillOpacity": 0
-                            }
-                        }
-                    ),
-
-                    dl.LayerGroup(cold_markers),
-                    dl.LayerGroup(rail_markers),
-                    dl.LayerGroup(airport_markers),
-                    dl.LayerGroup(mandi_markers),
-
-                    dl.LayerGroup(id="buffer-layer")
-
-                ],
-                style={
-                    "width": "100%",
-                    "height": "900px"
-                }
+            dcc.Graph(
+                figure=district_chart
             )
 
         ],
         style={
             "width": "30%",
             "display": "inline-block",
-            "verticalAlign": "top"
+            "verticalAlign": "top",
+            "padding": "20px"
+        }),
+
+        html.Div([
+
+            dcc.Graph(
+                id='map',
+                figure=fig
+            )
+
+        ],
+        style={
+            "width": "68%",
+            "display": "inline-block"
         })
 
     ])
@@ -357,75 +301,14 @@ app.layout = html.Div([
 ])
 
 # ============================================
-# BUFFER CALLBACK
-# ============================================
-
-@app.callback(
-    Output("buffer-layer", "children"),
-    Input("buffer-btn", "n_clicks"),
-    Input("rail-dropdown", "value"),
-    Input("buffer-dropdown", "value")
-)
-def generate_buffer(n_clicks, station, buffer_km):
-
-    if station is None:
-        return []
-
-    selected = rail_df[rail_df["Station"] == station]
-
-    if selected.empty:
-        return []
-
-    lat = selected.iloc[0]["Latitude"]
-    lon = selected.iloc[0]["Longitude"]
-
-    nearby = []
-
-    for _, row in cold_df.iterrows():
-
-        distance = haversine(
-            lat,
-            lon,
-            row["Latitude"],
-            row["Longitude"]
-        )
-
-        if distance <= buffer_km:
-
-            nearby.append(
-                dl.CircleMarker(
-                    center=[
-                        row["Latitude"],
-                        row["Longitude"]
-                    ],
-                    radius=10,
-                    color="yellow",
-                    children=[
-                        dl.Tooltip(
-                            f"{row['Name']} ({distance:.2f} KM)"
-                        )
-                    ]
-                )
-            )
-
-    return [
-
-        dl.Circle(
-            center=[lat, lon],
-            radius=buffer_km * 1000,
-            color="red",
-            fillOpacity=0.1
-        )
-
-    ] + nearby
-
-# ============================================
 # RUN SERVER
 # ============================================
 
-if __name__ == "__main__":
-    app.run_server(
-        debug=False,
-        host="0.0.0.0",
-        port=8050
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 10000))
+
+    app.run(
+        host='0.0.0.0',
+        port=port,
+        debug=False
     )
