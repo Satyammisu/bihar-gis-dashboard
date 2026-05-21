@@ -20,10 +20,15 @@ app = Dash(
 server = app.server
 
 # =========================================================
-# LOAD GEOJSON
+# LOAD BIHAR DISTRICT BOUNDARY
 # =========================================================
 
-with open("bihar_district_boundary.geojson", "r", encoding="utf-8") as f:
+with open(
+    "bihar_district_boundary.geojson",
+    "r",
+    encoding="utf-8"
+) as f:
+
     district_geojson = json.load(f)
 
 # =========================================================
@@ -32,7 +37,10 @@ with open("bihar_district_boundary.geojson", "r", encoding="utf-8") as f:
 
 def load_csv(file_name):
 
-    df = pd.read_csv(file_name, encoding="utf-8")
+    df = pd.read_csv(
+        file_name,
+        encoding="utf-8"
+    )
 
     df.columns = (
         df.columns
@@ -62,7 +70,11 @@ def standardize_columns(df):
 
     for col in df.columns:
 
-        col_lower = col.lower()
+        col_lower = col.lower().strip()
+
+        # =================================================
+        # NAME
+        # =================================================
 
         if "station" in col_lower:
             column_mapping[col] = "Name"
@@ -70,19 +82,47 @@ def standardize_columns(df):
         elif "name" in col_lower:
             column_mapping[col] = "Name"
 
+        # =================================================
+        # DISTRICT
+        # =================================================
+
         elif "district" in col_lower:
             column_mapping[col] = "District"
 
-        elif "capacity" in col_lower:
+        # =================================================
+        # CAPACITY
+        # =================================================
+
+        elif (
+            "capacity" in col_lower
+            or "cap" in col_lower
+            or "storage" in col_lower
+        ):
             column_mapping[col] = "Capacity"
+
+        # =================================================
+        # LATITUDE
+        # =================================================
 
         elif "lat" in col_lower:
             column_mapping[col] = "Latitude"
 
+        # =================================================
+        # LONGITUDE
+        # =================================================
+
         elif "lon" in col_lower:
             column_mapping[col] = "Longitude"
 
+    # =====================================================
+    # RENAME
+    # =====================================================
+
     df = df.rename(columns=column_mapping)
+
+    # =====================================================
+    # REQUIRED COLUMNS
+    # =====================================================
 
     required_cols = [
         "Name",
@@ -96,20 +136,46 @@ def standardize_columns(df):
         if col not in df.columns:
             df[col] = None
 
+    # =====================================================
+    # CAPACITY COLUMN
+    # =====================================================
+
     if "Capacity" not in df.columns:
         df["Capacity"] = 0
 
+    # =====================================================
+    # CLEAN DATA
+    # =====================================================
+
     df["Name"] = df["Name"].fillna("Unknown")
     df["District"] = df["District"].fillna("Unknown")
+
+    # =====================================================
+    # LATITUDE
+    # =====================================================
 
     df["Latitude"] = pd.to_numeric(
         df["Latitude"],
         errors="coerce"
     )
 
+    # =====================================================
+    # LONGITUDE
+    # =====================================================
+
     df["Longitude"] = pd.to_numeric(
         df["Longitude"],
         errors="coerce"
+    )
+
+    # =====================================================
+    # CAPACITY CLEANING
+    # =====================================================
+
+    df["Capacity"] = (
+        df["Capacity"]
+        .astype(str)
+        .str.replace(",", "")
     )
 
     df["Capacity"] = pd.to_numeric(
@@ -117,11 +183,22 @@ def standardize_columns(df):
         errors="coerce"
     ).fillna(0)
 
+    # =====================================================
+    # REMOVE INVALID COORDINATES
+    # =====================================================
+
     df = df.dropna(
-        subset=["Latitude", "Longitude"]
+        subset=[
+            "Latitude",
+            "Longitude"
+        ]
     )
 
     return df
+
+# =========================================================
+# APPLY STANDARDIZATION
+# =========================================================
 
 cold_df = standardize_columns(cold_df)
 rail_df = standardize_columns(rail_df)
@@ -141,7 +218,12 @@ total_mandi = len(mandi_df)
 # HAVERSINE FUNCTION
 # =========================================================
 
-def haversine(lat1, lon1, lat2, lon2):
+def haversine(
+    lat1,
+    lon1,
+    lat2,
+    lon2
+):
 
     R = 6371
 
@@ -150,9 +232,12 @@ def haversine(lat1, lon1, lat2, lon2):
 
     a = (
         math.sin(dlat / 2) ** 2
-        + math.cos(math.radians(lat1))
-        * math.cos(math.radians(lat2))
-        * math.sin(dlon / 2) ** 2
+        +
+        math.cos(math.radians(lat1))
+        *
+        math.cos(math.radians(lat2))
+        *
+        math.sin(dlon / 2) ** 2
     )
 
     c = 2 * math.atan2(
@@ -163,15 +248,15 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 # =========================================================
-# BASE MAP
+# CREATE MAP
 # =========================================================
 
-def create_map():
+def create_map(map_style):
 
     fig = go.Figure()
 
     # =====================================================
-    # BIHAR DISTRICT BOUNDARY
+    # DISTRICT BOUNDARY
     # =====================================================
 
     fig.add_trace(
@@ -181,13 +266,21 @@ def create_map():
             geojson=district_geojson,
 
             locations=[
-                feature["properties"].get("district", i)
+                feature["properties"].get(
+                    "district",
+                    str(i)
+                )
+
                 for i, feature in enumerate(
                     district_geojson["features"]
                 )
             ],
 
-            z=[1] * len(district_geojson["features"]),
+            z=[
+                1
+            ] * len(
+                district_geojson["features"]
+            ),
 
             colorscale=[
                 [0, "rgba(0,0,0,0)"],
@@ -195,6 +288,7 @@ def create_map():
             ],
 
             marker_line_width=1,
+
             marker_line_color="black",
 
             showscale=False,
@@ -214,13 +308,14 @@ def create_map():
         go.Scattermapbox(
 
             lat=cold_df["Latitude"],
+
             lon=cold_df["Longitude"],
 
             mode="markers",
 
             marker=dict(
                 size=9,
-                color="#1E88E5"
+                color="#1976D2"
             ),
 
             text=cold_df["Name"],
@@ -232,7 +327,7 @@ def create_map():
     )
 
     # =====================================================
-    # RAILWAY STATION
+    # RAILWAY STATIONS
     # =====================================================
 
     fig.add_trace(
@@ -240,6 +335,7 @@ def create_map():
         go.Scattermapbox(
 
             lat=rail_df["Latitude"],
+
             lon=rail_df["Longitude"],
 
             mode="markers",
@@ -251,14 +347,14 @@ def create_map():
 
             text=rail_df["Name"],
 
-            name="Railway"
+            name="Railway Station"
 
         )
 
     )
 
     # =====================================================
-    # AIRPORT
+    # AIRPORTS
     # =====================================================
 
     fig.add_trace(
@@ -266,12 +362,13 @@ def create_map():
         go.Scattermapbox(
 
             lat=airport_df["Latitude"],
+
             lon=airport_df["Longitude"],
 
             mode="markers",
 
             marker=dict(
-                size=12,
+                size=13,
                 color="green"
             ),
 
@@ -284,7 +381,7 @@ def create_map():
     )
 
     # =====================================================
-    # MANDI
+    # MANDIS
     # =====================================================
 
     fig.add_trace(
@@ -292,6 +389,7 @@ def create_map():
         go.Scattermapbox(
 
             lat=mandi_df["Latitude"],
+
             lon=mandi_df["Longitude"],
 
             mode="markers",
@@ -309,18 +407,24 @@ def create_map():
 
     )
 
+    # =====================================================
+    # MAP LAYOUT
+    # =====================================================
+
     fig.update_layout(
 
-        mapbox_style="carto-positron",
+        mapbox_style=map_style,
 
         mapbox_zoom=6,
 
         mapbox_center={
+
             "lat": 25.7,
             "lon": 85.3
+
         },
 
-        height=750,
+        height=800,
 
         margin={
             "r": 0,
@@ -348,6 +452,7 @@ district_chart = px.bar(
     .reset_index(name="Cold Storages"),
 
     x="District",
+
     y="Cold Storages",
 
     title="District Wise Cold Storages",
@@ -356,6 +461,10 @@ district_chart = px.bar(
 
     template="plotly_white"
 
+)
+
+district_chart.update_layout(
+    height=450
 )
 
 # =========================================================
@@ -379,21 +488,33 @@ app.layout = dbc.Container(
                     [
 
                         html.H1(
+
                             "BIHAR GIS INFRASTRUCTURE DASHBOARD",
+
                             style={
+
                                 "textAlign": "center",
+
                                 "color": "white",
+
                                 "fontWeight": "bold",
+
                                 "padding": "15px"
+
                             }
+
                         )
 
                     ],
 
                     style={
+
                         "background": "#0D47A1",
+
                         "borderRadius": "10px",
+
                         "marginTop": "10px"
+
                     }
 
                 )
@@ -423,7 +544,9 @@ app.layout = dbc.Container(
                                     className="text-primary"
                                 ),
 
-                                html.H5("Cold Storages")
+                                html.H5(
+                                    "Cold Storages"
+                                )
 
                             ]
 
@@ -450,7 +573,9 @@ app.layout = dbc.Container(
                                     className="text-danger"
                                 ),
 
-                                html.H5("Railway Stations")
+                                html.H5(
+                                    "Railway Stations"
+                                )
 
                             ]
 
@@ -477,7 +602,9 @@ app.layout = dbc.Container(
                                     className="text-success"
                                 ),
 
-                                html.H5("Airports")
+                                html.H5(
+                                    "Airports"
+                                )
 
                             ]
 
@@ -504,7 +631,9 @@ app.layout = dbc.Container(
                                     className="text-warning"
                                 ),
 
-                                html.H5("Mandis")
+                                html.H5(
+                                    "Mandis"
+                                )
 
                             ]
 
@@ -547,9 +676,16 @@ app.layout = dbc.Container(
                                 [
 
                                     html.H4(
-                                        "Railway Station Buffer Analysis",
+
+                                        "Railway Buffer Analysis",
+
                                         className="mb-4"
+
                                     ),
+
+                                    # =====================
+                                    # RAILWAY DROPDOWN
+                                    # =====================
 
                                     html.Label(
                                         "Select Railway Station"
@@ -562,8 +698,11 @@ app.layout = dbc.Container(
                                         options=[
 
                                             {
+
                                                 "label": i,
+
                                                 "value": i
+
                                             }
 
                                             for i in sorted(
@@ -574,13 +713,18 @@ app.layout = dbc.Container(
 
                                         ],
 
-                                        placeholder="Choose Railway Station",
+                                        placeholder=
+                                        "Choose Railway Station",
 
                                         searchable=True
 
                                     ),
 
                                     html.Br(),
+
+                                    # =====================
+                                    # BUFFER DROPDOWN
+                                    # =====================
 
                                     html.Label(
                                         "Buffer Distance"
@@ -620,6 +764,10 @@ app.layout = dbc.Container(
 
                                     html.Br(),
 
+                                    # =====================
+                                    # DISTRICT DROPDOWN
+                                    # =====================
+
                                     html.Label(
                                         "Search District"
                                     ),
@@ -631,8 +779,11 @@ app.layout = dbc.Container(
                                         options=[
 
                                             {
+
                                                 "label": i,
+
                                                 "value": i
+
                                             }
 
                                             for i in sorted(
@@ -643,7 +794,52 @@ app.layout = dbc.Container(
 
                                         ],
 
-                                        placeholder="Choose District"
+                                        placeholder=
+                                        "Choose District"
+
+                                    ),
+
+                                    html.Br(),
+
+                                    # =====================
+                                    # MAP STYLE
+                                    # =====================
+
+                                    html.Label(
+                                        "Map Style"
+                                    ),
+
+                                    dcc.Dropdown(
+
+                                        id="map-style",
+
+                                        options=[
+
+                                            {
+                                                "label": "Street Map",
+                                                "value": "carto-positron"
+                                            },
+
+                                            {
+                                                "label": "Satellite",
+                                                "value": "satellite-streets"
+                                            },
+
+                                            {
+                                                "label": "Dark Mode",
+                                                "value": "carto-darkmatter"
+                                            },
+
+                                            {
+                                                "label": "OpenStreetMap",
+                                                "value": "open-street-map"
+                                            }
+
+                                        ],
+
+                                        value="carto-positron",
+
+                                        clearable=False
 
                                     ),
 
@@ -679,7 +875,9 @@ app.layout = dbc.Container(
 
                             id="gis-map",
 
-                            figure=create_map(),
+                            figure=create_map(
+                                "carto-positron"
+                            ),
 
                             config={
                                 "displayModeBar": True
@@ -731,7 +929,9 @@ app.layout = dbc.Container(
                                         },
 
                                         {
-                                            "name": "Cold Storage Name",
+                                            "name":
+                                            "Cold Storage Name",
+
                                             "id": "Name"
                                         },
 
@@ -766,14 +966,21 @@ app.layout = dbc.Container(
                                     },
 
                                     style_header={
+
                                         "backgroundColor": "#0D47A1",
+
                                         "color": "white",
+
                                         "fontWeight": "bold"
+
                                     },
 
                                     style_cell={
+
                                         "textAlign": "left",
+
                                         "padding": "10px"
+
                                     }
 
                                 )
@@ -862,7 +1069,9 @@ app.layout = dbc.Container(
 
         Input("buffer-dropdown", "value"),
 
-        Input("district-dropdown", "value")
+        Input("district-dropdown", "value"),
+
+        Input("map-style", "value")
 
     ]
 
@@ -871,19 +1080,30 @@ app.layout = dbc.Container(
 def update_map(
 
     selected_station,
+
     buffer_km,
-    selected_district
+
+    selected_district,
+
+    map_style
 
 ):
 
-    fig = create_map()
+    fig = create_map(map_style)
 
     filtered_cold_df = cold_df.copy()
+
+    # =====================================================
+    # DISTRICT FILTER
+    # =====================================================
 
     if selected_district:
 
         filtered_cold_df = filtered_cold_df[
-            filtered_cold_df["District"] == selected_district
+
+            filtered_cold_df["District"]
+            == selected_district
+
         ]
 
     # =====================================================
@@ -925,10 +1145,11 @@ def update_map(
         return fig, [], "No station found"
 
     station_lat = station.iloc[0]["Latitude"]
+
     station_lon = station.iloc[0]["Longitude"]
 
     # =====================================================
-    # HIGHLIGHT STATION
+    # HIGHLIGHT SELECTED STATION
     # =====================================================
 
     fig.add_trace(
@@ -936,6 +1157,7 @@ def update_map(
         go.Scattermapbox(
 
             lat=[station_lat],
+
             lon=[station_lon],
 
             mode="markers",
@@ -995,6 +1217,7 @@ def update_map(
         go.Scattermapbox(
 
             lat=circle_lat,
+
             lon=circle_lon,
 
             mode="lines",
@@ -1015,13 +1238,15 @@ def update_map(
     )
 
     # =====================================================
-    # NEARBY COLD STORAGE
+    # FIND NEARBY COLD STORAGE
     # =====================================================
 
     nearby_rows = []
 
     nearby_lat = []
+
     nearby_lon = []
+
     nearby_name = []
 
     for _, row in filtered_cold_df.iterrows():
@@ -1029,9 +1254,11 @@ def update_map(
         dist = haversine(
 
             station_lat,
+
             station_lon,
 
             row["Latitude"],
+
             row["Longitude"]
 
         )
@@ -1090,6 +1317,7 @@ def update_map(
             go.Scattermapbox(
 
                 lat=nearby_lat,
+
                 lon=nearby_lon,
 
                 mode="markers",
@@ -1118,6 +1346,7 @@ def update_map(
         mapbox_center={
 
             "lat": station_lat,
+
             "lon": station_lon
 
         }
@@ -1129,8 +1358,11 @@ def update_map(
     # =====================================================
 
     total_capacity = sum(
+
         row["Capacity"]
+
         for row in nearby_rows
+
     )
 
     summary = html.Div(
@@ -1168,7 +1400,9 @@ if __name__ == "__main__":
     app.run_server(
 
         debug=False,
+
         host="0.0.0.0",
+
         port=10000
 
     )
