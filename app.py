@@ -1,12 +1,19 @@
+# =========================================================
+# BIHAR GIS INFRASTRUCTURE DASHBOARD
+# ENTERPRISE LEAFLET GIS VERSION
+# =========================================================
+
 import json
 import math
 import pandas as pd
 
-from dash import Dash, dcc, html, Input, Output, dash_table
+from dash import Dash, html, dcc, Input, Output
+from dash import dash_table
+
 import dash_bootstrap_components as dbc
 
-import plotly.express as px
-import plotly.graph_objects as go
+import dash_leaflet as dl
+import dash_leaflet.express as dlx
 
 # =========================================================
 # APP INITIALIZATION
@@ -20,7 +27,7 @@ app = Dash(
 server = app.server
 
 # =========================================================
-# LOAD BIHAR DISTRICT BOUNDARY
+# LOAD GEOJSON
 # =========================================================
 
 with open(
@@ -52,7 +59,7 @@ def load_csv(file_name):
     return df
 
 # =========================================================
-# LOAD DATA
+# LOAD CSV DATA
 # =========================================================
 
 cold_df = load_csv("cold_storage.csv")
@@ -70,7 +77,7 @@ def standardize_columns(df):
 
     for col in df.columns:
 
-        col_lower = col.lower().strip()
+        col_lower = col.lower()
 
         # =================================================
         # NAME
@@ -90,17 +97,6 @@ def standardize_columns(df):
             column_mapping[col] = "District"
 
         # =================================================
-        # CAPACITY
-        # =================================================
-
-        elif (
-            "capacity" in col_lower
-            or "cap" in col_lower
-            or "storage" in col_lower
-        ):
-            column_mapping[col] = "Capacity"
-
-        # =================================================
         # LATITUDE
         # =================================================
 
@@ -114,6 +110,18 @@ def standardize_columns(df):
         elif "lon" in col_lower:
             column_mapping[col] = "Longitude"
 
+        # =================================================
+        # CAPACITY
+        # =================================================
+
+        elif (
+            "capacity" in col_lower
+            or "cap" in col_lower
+            or "storage" in col_lower
+        ):
+
+            column_mapping[col] = "Capacity"
+
     # =====================================================
     # RENAME
     # =====================================================
@@ -121,14 +129,16 @@ def standardize_columns(df):
     df = df.rename(columns=column_mapping)
 
     # =====================================================
-    # REQUIRED COLUMNS
+    # REQUIRED COLS
     # =====================================================
 
     required_cols = [
+
         "Name",
         "District",
         "Latitude",
         "Longitude"
+
     ]
 
     for col in required_cols:
@@ -137,21 +147,22 @@ def standardize_columns(df):
             df[col] = None
 
     # =====================================================
-    # CAPACITY COLUMN
+    # CAPACITY
     # =====================================================
 
     if "Capacity" not in df.columns:
         df["Capacity"] = 0
 
     # =====================================================
-    # CLEAN DATA
+    # CLEANING
     # =====================================================
 
     df["Name"] = df["Name"].fillna("Unknown")
+
     df["District"] = df["District"].fillna("Unknown")
 
     # =====================================================
-    # LATITUDE
+    # NUMERIC
     # =====================================================
 
     df["Latitude"] = pd.to_numeric(
@@ -159,18 +170,10 @@ def standardize_columns(df):
         errors="coerce"
     )
 
-    # =====================================================
-    # LONGITUDE
-    # =====================================================
-
     df["Longitude"] = pd.to_numeric(
         df["Longitude"],
         errors="coerce"
     )
-
-    # =====================================================
-    # CAPACITY CLEANING
-    # =====================================================
 
     df["Capacity"] = (
         df["Capacity"]
@@ -209,13 +212,13 @@ mandi_df = standardize_columns(mandi_df)
 # KPI VALUES
 # =========================================================
 
-total_cold = len(cold_df)
-total_rail = len(rail_df)
-total_airport = len(airport_df)
-total_mandi = len(mandi_df)
+TOTAL_COLD = len(cold_df)
+TOTAL_RAIL = len(rail_df)
+TOTAL_AIRPORT = len(airport_df)
+TOTAL_MANDI = len(mandi_df)
 
 # =========================================================
-# HAVERSINE FUNCTION
+# HAVERSINE DISTANCE
 # =========================================================
 
 def haversine(
@@ -228,16 +231,25 @@ def haversine(
     R = 6371
 
     dlat = math.radians(lat2 - lat1)
+
     dlon = math.radians(lon2 - lon1)
 
     a = (
+
         math.sin(dlat / 2) ** 2
+
         +
+
         math.cos(math.radians(lat1))
+
         *
+
         math.cos(math.radians(lat2))
+
         *
+
         math.sin(dlon / 2) ** 2
+
     )
 
     c = 2 * math.atan2(
@@ -248,224 +260,298 @@ def haversine(
     return R * c
 
 # =========================================================
-# CREATE MAP
+# CREATE MARKERS
 # =========================================================
 
-def create_map(map_style):
+def create_markers():
 
-    fig = go.Figure()
-
-    # =====================================================
-    # DISTRICT BOUNDARY
-    # =====================================================
-
-    fig.add_trace(
-
-        go.Choroplethmapbox(
-
-            geojson=district_geojson,
-
-            locations=[
-                feature["properties"].get(
-                    "district",
-                    str(i)
-                )
-
-                for i, feature in enumerate(
-                    district_geojson["features"]
-                )
-            ],
-
-            z=[
-                1
-            ] * len(
-                district_geojson["features"]
-            ),
-
-            colorscale=[
-                [0, "rgba(0,0,0,0)"],
-                [1, "rgba(0,0,0,0)"]
-            ],
-
-            marker_line_width=1,
-
-            marker_line_color="black",
-
-            showscale=False,
-
-            hoverinfo="skip"
-
-        )
-
-    )
+    markers = []
 
     # =====================================================
     # COLD STORAGE
     # =====================================================
 
-    fig.add_trace(
+    for _, row in cold_df.iterrows():
 
-        go.Scattermapbox(
+        popup = dbc.Card(
 
-            lat=cold_df["Latitude"],
+            [
 
-            lon=cold_df["Longitude"],
+                dbc.CardBody(
 
-            mode="markers",
+                    [
 
-            marker=dict(
-                size=9,
-                color="#1976D2"
-            ),
+                        html.H5(
+                            "Cold Storage"
+                        ),
 
-            text=cold_df["Name"],
+                        html.P(
+                            f"District: {row['District']}"
+                        ),
 
-            name="Cold Storage"
+                        html.P(
+                            f"Name: {row['Name']}"
+                        ),
 
-        )
+                        html.P(
+                            f"Capacity: {row['Capacity']}"
+                        ),
 
-    )
+                        html.P(
+                            f"Latitude: {row['Latitude']}"
+                        ),
 
-    # =====================================================
-    # RAILWAY STATIONS
-    # =====================================================
+                        html.P(
+                            f"Longitude: {row['Longitude']}"
+                        ),
 
-    fig.add_trace(
+                        dbc.Button(
+                            "Navigate",
+                            color="primary",
+                            size="sm"
+                        )
 
-        go.Scattermapbox(
+                    ]
 
-            lat=rail_df["Latitude"],
+                )
 
-            lon=rail_df["Longitude"],
+            ],
 
-            mode="markers",
-
-            marker=dict(
-                size=11,
-                color="red"
-            ),
-
-            text=rail_df["Name"],
-
-            name="Railway Station"
-
-        )
-
-    )
-
-    # =====================================================
-    # AIRPORTS
-    # =====================================================
-
-    fig.add_trace(
-
-        go.Scattermapbox(
-
-            lat=airport_df["Latitude"],
-
-            lon=airport_df["Longitude"],
-
-            mode="markers",
-
-            marker=dict(
-                size=13,
-                color="green"
-            ),
-
-            text=airport_df["Name"],
-
-            name="Airport"
+            style={
+                "width": "220px"
+            }
 
         )
 
-    )
+        markers.append(
+
+            dl.CircleMarker(
+
+                center=[
+                    row["Latitude"],
+                    row["Longitude"]
+                ],
+
+                radius=7,
+
+                color="white",
+
+                fillColor="blue",
+
+                fillOpacity=0.9,
+
+                children=[
+
+                    dl.Popup(
+                        popup
+                    )
+
+                ]
+
+            )
+
+        )
+
+    # =====================================================
+    # RAILWAY
+    # =====================================================
+
+    for _, row in rail_df.iterrows():
+
+        markers.append(
+
+            dl.CircleMarker(
+
+                center=[
+                    row["Latitude"],
+                    row["Longitude"]
+                ],
+
+                radius=8,
+
+                color="white",
+
+                fillColor="red",
+
+                fillOpacity=0.9,
+
+                children=[
+
+                    dl.Popup(
+
+                        html.Div(
+
+                            [
+
+                                html.H5(
+                                    "Railway Station"
+                                ),
+
+                                html.P(
+                                    row["Name"]
+                                ),
+
+                                html.P(
+                                    row["District"]
+                                )
+
+                            ]
+
+                        )
+
+                    )
+
+                ]
+
+            )
+
+        )
+
+    # =====================================================
+    # AIRPORT
+    # =====================================================
+
+    for _, row in airport_df.iterrows():
+
+        markers.append(
+
+            dl.CircleMarker(
+
+                center=[
+                    row["Latitude"],
+                    row["Longitude"]
+                ],
+
+                radius=8,
+
+                color="white",
+
+                fillColor="green",
+
+                fillOpacity=0.9,
+
+                children=[
+
+                    dl.Popup(
+
+                        html.Div(
+
+                            [
+
+                                html.H5(
+                                    "Airport"
+                                ),
+
+                                html.P(
+                                    row["Name"]
+                                )
+
+                            ]
+
+                        )
+
+                    )
+
+                ]
+
+            )
+
+        )
 
     # =====================================================
     # MANDIS
     # =====================================================
 
-    fig.add_trace(
+    for _, row in mandi_df.iterrows():
 
-        go.Scattermapbox(
+        markers.append(
 
-            lat=mandi_df["Latitude"],
+            dl.CircleMarker(
 
-            lon=mandi_df["Longitude"],
+                center=[
+                    row["Latitude"],
+                    row["Longitude"]
+                ],
 
-            mode="markers",
+                radius=8,
 
-            marker=dict(
-                size=10,
-                color="orange"
-            ),
+                color="white",
 
-            text=mandi_df["Name"],
+                fillColor="orange",
 
-            name="Mandis"
+                fillOpacity=0.9,
+
+                children=[
+
+                    dl.Popup(
+
+                        html.Div(
+
+                            [
+
+                                html.H5(
+                                    "Mandi"
+                                ),
+
+                                html.P(
+                                    row["Name"]
+                                )
+
+                            ]
+
+                        )
+
+                    )
+
+                ]
+
+            )
 
         )
 
-    )
-
-    # =====================================================
-    # MAP LAYOUT
-    # =====================================================
-
-    fig.update_layout(
-
-        mapbox_style=map_style,
-
-        mapbox_zoom=6,
-
-        mapbox_center={
-
-            "lat": 25.7,
-            "lon": 85.3
-
-        },
-
-        height=800,
-
-        margin={
-            "r": 0,
-            "t": 0,
-            "l": 0,
-            "b": 0
-        },
-
-        legend=dict(
-            bgcolor="white"
-        )
-
-    )
-
-    return fig
+    return markers
 
 # =========================================================
-# DISTRICT ANALYTICS
+# DISTRICT DROPDOWN
 # =========================================================
 
-district_chart = px.bar(
+district_options = [
 
-    cold_df.groupby("District")
-    .size()
-    .reset_index(name="Cold Storages"),
+    {
 
-    x="District",
+        "label": i,
+        "value": i
 
-    y="Cold Storages",
+    }
 
-    title="District Wise Cold Storages",
+    for i in sorted(
+        cold_df["District"]
+        .dropna()
+        .unique()
+    )
 
-    color="Cold Storages",
+]
 
-    template="plotly_white"
+# =========================================================
+# RAILWAY DROPDOWN
+# =========================================================
 
-)
+rail_options = [
 
-district_chart.update_layout(
-    height=450
-)
+    {
+
+        "label": i,
+        "value": i
+
+    }
+
+    for i in sorted(
+        rail_df["Name"]
+        .dropna()
+        .unique()
+    )
+
+]
 
 # =========================================================
 # APP LAYOUT
@@ -499,7 +585,7 @@ app.layout = dbc.Container(
 
                                 "fontWeight": "bold",
 
-                                "padding": "15px"
+                                "padding": "20px"
 
                             }
 
@@ -509,7 +595,7 @@ app.layout = dbc.Container(
 
                     style={
 
-                        "background": "#0D47A1",
+                        "backgroundColor": "#0D47A1",
 
                         "borderRadius": "10px",
 
@@ -540,7 +626,7 @@ app.layout = dbc.Container(
                             [
 
                                 html.H2(
-                                    total_cold,
+                                    TOTAL_COLD,
                                     className="text-primary"
                                 ),
 
@@ -550,9 +636,7 @@ app.layout = dbc.Container(
 
                             ]
 
-                        ),
-
-                        className="shadow-sm"
+                        )
 
                     ),
 
@@ -569,7 +653,7 @@ app.layout = dbc.Container(
                             [
 
                                 html.H2(
-                                    total_rail,
+                                    TOTAL_RAIL,
                                     className="text-danger"
                                 ),
 
@@ -579,9 +663,7 @@ app.layout = dbc.Container(
 
                             ]
 
-                        ),
-
-                        className="shadow-sm"
+                        )
 
                     ),
 
@@ -598,7 +680,7 @@ app.layout = dbc.Container(
                             [
 
                                 html.H2(
-                                    total_airport,
+                                    TOTAL_AIRPORT,
                                     className="text-success"
                                 ),
 
@@ -608,9 +690,7 @@ app.layout = dbc.Container(
 
                             ]
 
-                        ),
-
-                        className="shadow-sm"
+                        )
 
                     ),
 
@@ -627,7 +707,7 @@ app.layout = dbc.Container(
                             [
 
                                 html.H2(
-                                    total_mandi,
+                                    TOTAL_MANDI,
                                     className="text-warning"
                                 ),
 
@@ -637,9 +717,7 @@ app.layout = dbc.Container(
 
                             ]
 
-                        ),
-
-                        className="shadow-sm"
+                        )
 
                     ),
 
@@ -654,7 +732,7 @@ app.layout = dbc.Container(
         ),
 
         # =================================================
-        # SIDEBAR + MAP
+        # MAIN SECTION
         # =================================================
 
         dbc.Row(
@@ -675,48 +753,26 @@ app.layout = dbc.Container(
 
                                 [
 
-                                    html.H4(
-
-                                        "Railway Buffer Analysis",
-
-                                        className="mb-4"
-
+                                    html.H3(
+                                        "Railway Station Buffer"
                                     ),
+
+                                    html.Br(),
 
                                     # =====================
                                     # RAILWAY DROPDOWN
                                     # =====================
 
-                                    html.Label(
-                                        "Select Railway Station"
-                                    ),
-
                                     dcc.Dropdown(
 
                                         id="rail-dropdown",
 
-                                        options=[
+                                        options=rail_options,
 
-                                            {
-
-                                                "label": i,
-
-                                                "value": i
-
-                                            }
-
-                                            for i in sorted(
-                                                rail_df["Name"]
-                                                .dropna()
-                                                .unique()
-                                            )
-
-                                        ],
+                                        value="Patna Junction",
 
                                         placeholder=
-                                        "Choose Railway Station",
-
-                                        searchable=True
+                                        "Select Railway Station"
 
                                     ),
 
@@ -725,10 +781,6 @@ app.layout = dbc.Container(
                                     # =====================
                                     # BUFFER DROPDOWN
                                     # =====================
-
-                                    html.Label(
-                                        "Buffer Distance"
-                                    ),
 
                                     dcc.Dropdown(
 
@@ -758,92 +810,28 @@ app.layout = dbc.Container(
 
                                         ],
 
-                                        value=10
+                                        value=5
 
                                     ),
 
                                     html.Br(),
 
                                     # =====================
-                                    # DISTRICT DROPDOWN
+                                    # DISTRICT SEARCH
                                     # =====================
-
-                                    html.Label(
-                                        "Search District"
-                                    ),
 
                                     dcc.Dropdown(
 
                                         id="district-dropdown",
 
-                                        options=[
-
-                                            {
-
-                                                "label": i,
-
-                                                "value": i
-
-                                            }
-
-                                            for i in sorted(
-                                                cold_df["District"]
-                                                .dropna()
-                                                .unique()
-                                            )
-
-                                        ],
+                                        options=district_options,
 
                                         placeholder=
-                                        "Choose District"
+                                        "Search District"
 
                                     ),
 
                                     html.Br(),
-
-                                    # =====================
-                                    # MAP STYLE
-                                    # =====================
-
-                                    html.Label(
-                                        "Map Style"
-                                    ),
-
-                                    dcc.Dropdown(
-
-                                        id="map-style",
-
-                                        options=[
-
-                                            {
-                                                "label": "Street Map",
-                                                "value": "carto-positron"
-                                            },
-
-                                            {
-                                                "label": "Satellite",
-                                                "value": "satellite-streets"
-                                            },
-
-                                            {
-                                                "label": "Dark Mode",
-                                                "value": "carto-darkmatter"
-                                            },
-
-                                            {
-                                                "label": "OpenStreetMap",
-                                                "value": "open-street-map"
-                                            }
-
-                                        ],
-
-                                        value="carto-positron",
-
-                                        clearable=False
-
-                                    ),
-
-                                    html.Hr(),
 
                                     html.Div(
                                         id="summary-box"
@@ -851,9 +839,7 @@ app.layout = dbc.Container(
 
                                 ]
 
-                            ),
-
-                            className="shadow"
+                            )
 
                         )
 
@@ -871,16 +857,121 @@ app.layout = dbc.Container(
 
                     [
 
-                        dcc.Graph(
+                        dl.Map(
 
-                            id="gis-map",
+                            [
 
-                            figure=create_map(
-                                "carto-positron"
-                            ),
+                                # =====================
+                                # BASE LAYERS
+                                # =====================
 
-                            config={
-                                "displayModeBar": True
+                                dl.LayersControl(
+
+                                    [
+
+                                        dl.BaseLayer(
+
+                                            dl.TileLayer(),
+
+                                            name="OpenStreetMap",
+
+                                            checked=True
+
+                                        ),
+
+                                        dl.BaseLayer(
+
+                                            dl.TileLayer(
+
+                                                url=
+                                                "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+                                            ),
+
+                                            name="Terrain"
+
+                                        ),
+
+                                        dl.BaseLayer(
+
+                                            dl.TileLayer(
+
+                                                url=
+                                                "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                                            ),
+
+                                            name="Dark Mode"
+
+                                        )
+
+                                    ]
+
+                                ),
+
+                                # =====================
+                                # DISTRICT BOUNDARY
+                                # =====================
+
+                                dl.GeoJSON(
+
+                                    data=district_geojson,
+
+                                    options={
+
+                                        "style": {
+
+                                            "color": "black",
+
+                                            "weight": 2,
+
+                                            "fillOpacity": 0
+
+                                        }
+
+                                    }
+
+                                ),
+
+                                # =====================
+                                # FULLSCREEN CONTROL
+                                # =====================
+
+                                dl.FullScreenControl(),
+
+                                # =====================
+                                # SCALE CONTROL
+                                # =====================
+
+                                dl.ScaleControl(),
+
+                                # =====================
+                                # MARKERS
+                                # =====================
+
+                                dl.LayerGroup(
+
+                                    id="marker-layer",
+
+                                    children=create_markers()
+
+                                ),
+
+                                # =====================
+                                # BUFFER CIRCLE
+                                # =====================
+
+                                dl.LayerGroup(
+                                    id="buffer-layer"
+                                )
+
+                            ],
+
+                            center=[25.7, 85.3],
+
+                            zoom=7,
+
+                            style={
+                                "width": "100%",
+                                "height": "850px"
                             }
 
                         )
@@ -941,16 +1032,6 @@ app.layout = dbc.Container(
                                         },
 
                                         {
-                                            "name": "Latitude",
-                                            "id": "Latitude"
-                                        },
-
-                                        {
-                                            "name": "Longitude",
-                                            "id": "Longitude"
-                                        },
-
-                                        {
                                             "name": "Distance (KM)",
                                             "id": "Distance"
                                         }
@@ -977,9 +1058,9 @@ app.layout = dbc.Container(
 
                                     style_cell={
 
-                                        "textAlign": "left",
+                                        "padding": "10px",
 
-                                        "padding": "10px"
+                                        "textAlign": "left"
 
                                     }
 
@@ -987,45 +1068,7 @@ app.layout = dbc.Container(
 
                             ]
 
-                        ),
-
-                        className="shadow"
-
-                    )
-
-                )
-
-            ],
-
-            className="mt-4"
-
-        ),
-
-        # =================================================
-        # ANALYTICS CHART
-        # =================================================
-
-        dbc.Row(
-
-            [
-
-                dbc.Col(
-
-                    dbc.Card(
-
-                        dbc.CardBody(
-
-                            [
-
-                                dcc.Graph(
-                                    figure=district_chart
-                                )
-
-                            ]
-
-                        ),
-
-                        className="shadow"
+                        )
 
                     )
 
@@ -1055,7 +1098,7 @@ app.layout = dbc.Container(
 
     [
 
-        Output("gis-map", "figure"),
+        Output("buffer-layer", "children"),
 
         Output("cold-table", "data"),
 
@@ -1069,68 +1112,21 @@ app.layout = dbc.Container(
 
         Input("buffer-dropdown", "value"),
 
-        Input("district-dropdown", "value"),
-
-        Input("map-style", "value")
+        Input("district-dropdown", "value")
 
     ]
 
 )
 
-def update_map(
+def update_buffer(
 
     selected_station,
 
     buffer_km,
 
-    selected_district,
-
-    map_style
+    selected_district
 
 ):
-
-    fig = create_map(map_style)
-
-    filtered_cold_df = cold_df.copy()
-
-    # =====================================================
-    # DISTRICT FILTER
-    # =====================================================
-
-    if selected_district:
-
-        filtered_cold_df = filtered_cold_df[
-
-            filtered_cold_df["District"]
-            == selected_district
-
-        ]
-
-    # =====================================================
-    # NO STATION SELECTED
-    # =====================================================
-
-    if selected_station is None:
-
-        return (
-
-            fig,
-
-            [],
-
-            html.Div(
-
-                [
-
-                    html.H5(
-                        "No Railway Station Selected"
-                    )
-
-                ]
-
-            )
-
-        )
 
     # =====================================================
     # GET STATION
@@ -1142,123 +1138,45 @@ def update_map(
 
     if station.empty:
 
-        return fig, [], "No station found"
+        return [], [], "No station found"
 
     station_lat = station.iloc[0]["Latitude"]
 
     station_lon = station.iloc[0]["Longitude"]
 
     # =====================================================
-    # HIGHLIGHT SELECTED STATION
+    # FILTER DISTRICT
     # =====================================================
 
-    fig.add_trace(
+    filtered_df = cold_df.copy()
 
-        go.Scattermapbox(
+    if selected_district:
 
-            lat=[station_lat],
+        filtered_df = filtered_df[
 
-            lon=[station_lon],
+            filtered_df["District"]
+            == selected_district
 
-            mode="markers",
-
-            marker=dict(
-                size=18,
-                color="yellow"
-            ),
-
-            text=[selected_station],
-
-            name="Selected Station"
-
-        )
-
-    )
+        ]
 
     # =====================================================
-    # BUFFER CIRCLE
-    # =====================================================
-
-    theta = [
-
-        i * (360 / 100)
-
-        for i in range(101)
-
-    ]
-
-    circle_lat = []
-    circle_lon = []
-
-    for angle in theta:
-
-        dx = (
-            buffer_km / 111
-        ) * math.cos(
-            math.radians(angle)
-        )
-
-        dy = (
-            buffer_km / 111
-        ) * math.sin(
-            math.radians(angle)
-        )
-
-        circle_lat.append(
-            station_lat + dy
-        )
-
-        circle_lon.append(
-            station_lon + dx
-        )
-
-    fig.add_trace(
-
-        go.Scattermapbox(
-
-            lat=circle_lat,
-
-            lon=circle_lon,
-
-            mode="lines",
-
-            fill="toself",
-
-            fillcolor="rgba(255,0,0,0.15)",
-
-            line=dict(
-                color="red",
-                width=2
-            ),
-
-            name=f"{buffer_km} KM Buffer"
-
-        )
-
-    )
-
-    # =====================================================
-    # FIND NEARBY COLD STORAGE
+    # FIND NEARBY STORAGE
     # =====================================================
 
     nearby_rows = []
 
-    nearby_lat = []
+    nearby_markers = []
 
-    nearby_lon = []
+    total_capacity = 0
 
-    nearby_name = []
-
-    for _, row in filtered_cold_df.iterrows():
+    for _, row in filtered_df.iterrows():
 
         dist = haversine(
 
             station_lat,
-
             station_lon,
 
             row["Latitude"],
-
             row["Longitude"]
 
         )
@@ -1275,16 +1193,6 @@ def update_map(
 
                     "Capacity": row["Capacity"],
 
-                    "Latitude": round(
-                        row["Latitude"],
-                        4
-                    ),
-
-                    "Longitude": round(
-                        row["Longitude"],
-                        4
-                    ),
-
                     "Distance": round(
                         dist,
                         2
@@ -1294,76 +1202,90 @@ def update_map(
 
             )
 
-            nearby_lat.append(
-                row["Latitude"]
-            )
+            total_capacity += row["Capacity"]
 
-            nearby_lon.append(
-                row["Longitude"]
-            )
+            nearby_markers.append(
 
-            nearby_name.append(
-                row["Name"]
-            )
+                dl.CircleMarker(
 
-    # =====================================================
-    # PLOT NEARBY STORAGE
-    # =====================================================
+                    center=[
+                        row["Latitude"],
+                        row["Longitude"]
+                    ],
 
-    if len(nearby_lat) > 0:
+                    radius=10,
 
-        fig.add_trace(
+                    color="cyan",
 
-            go.Scattermapbox(
+                    fillColor="cyan",
 
-                lat=nearby_lat,
+                    fillOpacity=0.9
 
-                lon=nearby_lon,
-
-                mode="markers",
-
-                marker=dict(
-                    size=14,
-                    color="cyan"
-                ),
-
-                text=nearby_name,
-
-                name="Nearby Cold Storage"
+                )
 
             )
 
-        )
-
     # =====================================================
-    # MAP CENTER
+    # BUFFER CIRCLE
     # =====================================================
 
-    fig.update_layout(
+    buffer_circle = dl.Circle(
 
-        mapbox_zoom=7,
+        center=[
+            station_lat,
+            station_lon
+        ],
 
-        mapbox_center={
+        radius=buffer_km * 1000,
 
-            "lat": station_lat,
+        color="green",
 
-            "lon": station_lon
+        fillColor="green",
 
-        }
+        fillOpacity=0.15
+
+    )
+
+    # =====================================================
+    # SELECTED STATION MARKER
+    # =====================================================
+
+    station_marker = dl.Marker(
+
+        position=[
+            station_lat,
+            station_lon
+        ],
+
+        children=[
+
+            dl.Popup(
+
+                html.Div(
+
+                    [
+
+                        html.H4(
+                            selected_station
+                        ),
+
+                        html.P(
+                            f"Buffer: {buffer_km} KM"
+                        )
+
+                    ]
+
+                )
+
+            )
+
+        ]
 
     )
 
     # =====================================================
     # SUMMARY
     # =====================================================
-
-    total_capacity = sum(
-
-        row["Capacity"]
-
-        for row in nearby_rows
-
-    )
 
     summary = html.Div(
 
@@ -1389,7 +1311,21 @@ def update_map(
 
     )
 
-    return fig, nearby_rows, summary
+    return (
+
+        [
+
+            buffer_circle,
+
+            station_marker
+
+        ] + nearby_markers,
+
+        nearby_rows,
+
+        summary
+
+    )
 
 # =========================================================
 # RUN SERVER
